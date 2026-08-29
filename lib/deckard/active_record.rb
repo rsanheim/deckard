@@ -76,7 +76,7 @@ module Deckard
       configured.each do |name|
         next if omissions.include?(name)
         unless self.class.reflect_on_association(name)
-          raise DumpError, "#{self.class} has no association #{name.inspect} configured in its replicate block"
+          raise DumpError, "#{self.class} names #{name.inspect} in its replicate block, but no such association exists"
         end
         dump_association(dumper, name, options)
       end

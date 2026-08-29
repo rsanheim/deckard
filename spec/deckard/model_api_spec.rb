@@ -124,8 +124,10 @@ RSpec.describe "replicate model DSL" do
     existing = Reader.create!(login: "rob", email: "rob@dest.example")
     ReaderEmail.create!(reader: existing, email: "rob@shared.example", label: "stale")
 
+    Reader.callbacks_fired.clear
     Deckard::Loader.new(io).load
 
+    expect(Reader.callbacks_fired).to be_empty
     expect(Reader.sole.id).to eq(existing.id)
     expect(Reader.sole.email).to eq("rob@source.example")
     email = ReaderEmail.sole

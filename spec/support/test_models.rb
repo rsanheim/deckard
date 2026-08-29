@@ -47,6 +47,13 @@ end
 class Reader < ActiveRecord::Base
   has_many :reader_emails
 
+  # Guard proving the natural-key update path also bypasses callbacks.
+  before_save { self.class.callbacks_fired << login }
+
+  def self.callbacks_fired
+    @callbacks_fired ||= []
+  end
+
   replicate do
     natural_key :login
   end
