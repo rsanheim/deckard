@@ -1,0 +1,5 @@
+.bundle/
+log/*
+tmp/*
+config/master.key
+Gemfile.lock

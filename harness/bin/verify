@@ -1,0 +1,46 @@
+#!/usr/bin/env ruby
+# Assert the destination database contains the correctly remapped graph
+# after bin/load. Exits nonzero with a FAIL message on any mismatch.
+
+require_relative "../config/environment"
+
+failures = []
+check = ->(condition, message) { failures << message unless condition }
+
+check.call(Author.count == 2, "expected 2 authors, got #{Author.count}")
+check.call(Profile.count == 2, "expected 2 profiles, got #{Profile.count}")
+check.call(Post.count == 2, "expected 2 posts, got #{Post.count}")
+check.call(Comment.count == 3, "expected 3 comments, got #{Comment.count}")
+
+# IDs must be destination-generated: bin/stream_test restarts destination
+# sequences at 100000 before loading, so remapped rows land above that.
+all_ids = [Author, Profile, Post, Comment].flat_map { |m| m.pluck(:id) }
+check.call(all_ids.all? { |id| id >= 100000 }, "found rows with non-remapped ids: #{all_ids.select { |id| id < 100000 }.inspect}")
+
+# Foreign keys must point at the right remapped rows.
+nexus = Post.find_by(title: "Nexus-6 field notes")
+check.call(nexus&.author&.name == "Rachael", "Nexus-6 post not linked to Rachael")
+check.call(nexus && nexus.comments.count == 2, "Nexus-6 post should have 2 comments")
+
+origami = Post.find_by(title: "Unicorn origami")
+check.call(origami&.comments&.sole&.author&.name == "Rachael", "origami comment not linked to Rachael")
+
+# Shared dependency: many references, one destination copy per author.
+check.call(Comment.distinct.pluck(:author_id).sort == Author.pluck(:id).sort, "comment author_ids do not match the loaded authors")
+check.call(Profile.find_by(bio: "More human than human")&.author&.name == "Rachael", "Rachael's profile not linked")
+
+# Prove the callback/validation guards are armed in this environment: a
+# normal create! must fail here, so a clean load means deckard bypassed them.
+begin
+  Author.create!(name: "should not persist")
+  failures << "Author.create! succeeded - callback/validation guards are not armed, load proves nothing"
+rescue RuntimeError, ActiveRecord::RecordInvalid
+  Author.where(name: "should not persist").delete_all
+end
+
+if failures.empty?
+  puts "verify: OK - #{Author.count + Profile.count + Post.count + Comment.count} rows, remapped ids, intact foreign keys, guards armed"
+else
+  failures.each { |message| puts "FAIL: #{message}" }
+  exit 1
+end

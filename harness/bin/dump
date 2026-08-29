@@ -1,0 +1,16 @@
+#!/usr/bin/env ruby
+# Dump the result of a Ruby expression as a deckard stream on stdout.
+# Stand-in for the deckard CLI until Phase 5 delivers it.
+#
+#   bin/dump "Comment.all" > stream.dump
+
+require_relative "../config/environment"
+
+expression = ARGV.fetch(0) { abort "usage: bin/dump EXPRESSION" }
+
+dumper = Deckard::Dumper.new($stdout)
+dumper.dump(eval(expression)) # rubocop:disable Security/Eval -- trusted operator input, mirrors deckard -d
+dumper.complete
+
+total = dumper.counts.values.sum
+warn "dumped #{total} total objects: #{dumper.counts.sort.map { |type, n| "#{type}=#{n}" }.join(" ")}"

@@ -1,0 +1,43 @@
+services:
+  db-source:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: deckard
+    ports:
+      - "55433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  db-dest:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: deckard
+    ports:
+      - "55434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  app_source:
+    image: deckard-harness
+    build:
+      context: ..
+      dockerfile: harness/Dockerfile
+    environment:
+      DATABASE_URL: postgres://postgres:deckard@db-source:5432/harness
+    depends_on:
+      db-source:
+        condition: service_healthy
+
+  app_dest:
+    image: deckard-harness
+    environment:
+      DATABASE_URL: postgres://postgres:deckard@db-dest:5432/harness
+    depends_on:
+      db-dest:
+        condition: service_healthy

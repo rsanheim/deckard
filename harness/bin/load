@@ -1,0 +1,13 @@
+#!/usr/bin/env ruby
+# Load a deckard stream from stdin into this app's database.
+# Stand-in for the deckard CLI until Phase 5 delivers it.
+#
+#   bin/load < stream.dump
+
+require_relative "../config/environment"
+
+loader = Deckard::Loader.new($stdin)
+loader.load
+
+total = loader.counts.values.sum
+warn "loaded #{total} total objects: #{loader.counts.sort.map { |type, n| "#{type}=#{n}" }.join(" ")}"
