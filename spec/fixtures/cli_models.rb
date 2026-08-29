@@ -26,3 +26,9 @@ class CliWidget
 end
 
 WIDGETS = [CliWidget.new(id: 1, name: "flux"), CliWidget.new(id: 2, name: "capacitor")]
+
+# Lazily yields enough widgets to overrun a pipe buffer, for the
+# broken-pipe spec. Costs nothing unless iterated.
+BIG_WIDGETS = Enumerator.new do |yielder|
+  10_000.times { |i| yielder << CliWidget.new(id: i, name: "widget-#{i}-#{"x" * 40}") }
+end

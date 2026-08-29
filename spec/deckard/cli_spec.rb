@@ -75,6 +75,17 @@ RSpec.describe "deckard CLI" do
     expect(out).to include("deckard #{Deckard::VERSION}")
   end
 
+  it "exits nonzero with a message when the output pipe closes mid-stream" do
+    root = File.expand_path("../..", __dir__)
+    pipeline = "#{RbConfig.ruby} -Ilib exe/deckard -r #{fixture} -d BIG_WIDGETS | head -c 1 > /dev/null; " \
+      "echo \"deckard_exit:${PIPESTATUS[0]}\" >&2"
+
+    _, err, _ = Open3.capture3("bash", "-c", pipeline, chdir: root)
+
+    expect(err).to include("deckard: output pipe closed before the stream completed")
+    expect(err).to include("deckard_exit:1")
+  end
+
   it "exits nonzero with the error on a truncated stream" do
     truncated = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, truncated)
