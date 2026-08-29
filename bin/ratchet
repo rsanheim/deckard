@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Fails the build if any spec file uses `let!` or RSpec shared behaviors.
+set -euo pipefail
+
+PATTERN='let!|shared_examples_for|shared_examples|shared_context|it_behaves_like|it_should_behave_like|include_examples|include_context'
+
+set +e
+matches=$(grep -rnE "$PATTERN" --include='*.rb' spec/)
+status=$?
+set -e
+
+if [ "$status" -eq 0 ]; then
+  echo "ratchet: forbidden pattern(s) found in spec/ (let! or RSpec shared behaviors are not allowed):"
+  echo "$matches"
+  exit 1
+elif [ "$status" -gt 1 ]; then
+  echo "ratchet: grep failed with exit code $status"
+  exit "$status"
+fi
+
+echo "ratchet: OK - no let! or shared behaviors found in spec/"

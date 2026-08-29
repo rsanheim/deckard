@@ -7,4 +7,8 @@ RSpec::Core::RakeTask.new(:spec)
 
 require "standard/rake"
 
-task default: %i[spec standard]
+task :ratchet do
+  sh "bin/ratchet"
+end
+
+task default: %i[spec standard ratchet]
