@@ -1199,6 +1199,15 @@ Polymorphic associations, composite primary keys, and unsupported dependency cyc
 
 ## 19. Implementation order
 
+Status:
+
+- [x] Phase 1: Core stream
+- [x] Phase 2: Integration test harness
+- [x] Phase 3: ActiveRecord basics
+- [ ] Phase 4: Original model API
+- [ ] Phase 5: Original CLI
+- [ ] Phase 6: Hardening and release
+
 ### Phase 1: Core stream
 
 Implement:
