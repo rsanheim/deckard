@@ -1,8 +1,13 @@
 # frozen_string_literal: true
 
 require_relative "deckard/version"
+require_relative "deckard/errors"
+require_relative "deckard/dumper"
+require_relative "deckard/loader"
 
 module Deckard
-  class Error < StandardError; end
-  # Your code goes here...
+  # Stream protocol frames. The header opens every stream; the end marker
+  # distinguishes a complete stream from one whose source died mid-dump.
+  STREAM_HEADER = [:deckard, 1].freeze
+  STREAM_END = [:deckard_end, 1].freeze
 end
