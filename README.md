@@ -1,35 +1,122 @@
 # Deckard
 
-TODO: Delete this and the text below, and describe your gem
+Deckard streams ActiveRecord objects between Rails environments — a modern
+resurrection of the [replicate](https://github.com/rtomayko/replicate) gem for
+ActiveRecord 8+ and PostgreSQL. Its primary use is piping selected production
+records into a local development database for debugging and realistic
+development data.
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/deckard`. To experiment with that code, run `bin/console` for an interactive prompt.
+```bash
+ssh example.org "deckard -r /app/config/environment -d 'User.find(1234)'" \
+  | deckard -r ./config/environment -l
+```
+
+Records arrive with new destination-generated primary keys; foreign keys are
+rewritten to match. Loads run in one transaction that commits only when the
+stream ends cleanly, and the default loader bypasses validations and
+callbacks — it copies data, it does not run your application.
 
 ## Installation
 
-TODO: Replace `UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG` with your gem name right after releasing it to RubyGems.org. Please do not do it earlier due to security reasons. Alternatively, replace this section with instructions to install your gem from git if you don't plan to release to RubyGems.org.
+Add Deckard to each environment that will dump or load:
 
-Install the gem and add to the application's Gemfile by executing:
-
-```bash
-bundle add UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+```ruby
+gem "deckard"
 ```
 
-If bundler is not being used to manage dependencies, install the gem by executing:
+## Dumping
+
+Evaluate a Ruby expression and write the object stream to standard output:
 
 ```bash
-gem install UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+deckard -r ./config/environment -d "User.find(1)" > user.dump
 ```
 
-## Usage
+Diagnostics go to standard error; standard output carries only the stream:
 
-TODO: Write usage instructions here
+```text
+dumped 4 total objects:
+
+Profile    1
+User       1
+UserEmail  2
+```
+
+Dumping a record automatically includes its `belongs_to` and `has_one`
+associations. `has_many` collections are only dumped when opted in (see
+below) — they can pull in a large slice of the database.
+
+For more involved selection, pass a Ruby file instead of an expression. The
+script runs in a context exposing `dump(object, options = {})`:
+
+```ruby
+# config/deckard/dump-stuff.rb
+require "./config/environment"
+
+repo = Repository.find_by(name: "tilt")
+dump repo
+dump repo.issues
+```
+
+```bash
+deckard -d config/deckard/dump-stuff.rb > repos.dump
+```
+
+## Loading
+
+Load a stream from standard input:
+
+```bash
+deckard -r ./config/environment -l < repos.dump
+```
+
+## Streaming over SSH
+
+The normal remote workflow is a plain Unix pipeline — SSH is the transport,
+and no intermediate file is needed:
+
+```bash
+remote_command="deckard -r /app/config/environment -d 'User.find(1234)'"
+
+ssh example.org "$remote_command" \
+  | deckard -r ./config/environment -l
+```
+
+Both ends stream: the destination begins inserting while the source is still
+traversing. If the remote side dies mid-stream, the destination transaction
+rolls back and nothing is committed.
+
+## Model configuration
+
+```ruby
+class User < ActiveRecord::Base
+  belongs_to :profile
+  has_many :email_addresses
+
+  replicate do
+    associations :email_addresses   # opt this has_many into dumps
+    natural_key :login              # reuse an existing destination row
+    omit :encrypted_password        # keep an attribute out of the stream
+  end
+end
+```
+
+A dump call can also add associations or omissions for just that dump:
+
+```ruby
+dump User.all, associations: [:email_addresses], omit: [:created_at]
+```
+
+## Security
+
+The stream is Ruby `Marshal` data: load streams only from applications and
+operators you trust, over an authenticated transport such as SSH. Deckard is
+an internal operator tool, not a public import format. Dumped production data
+lands unmasked in the destination database — treat dumps accordingly.
 
 ## Development
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
-
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
-
-## Contributing
-
-Bug reports and pull requests are welcome on GitHub at https://github.com/rsanheim/deckard.
+`bundle exec rake` runs the unit/integration suite (specs against a local
+PostgreSQL 18, lint, and a style ratchet). `bundle exec rake e2e` runs the
+full-stack test: a real Rails app streaming between two docker compose
+containers. See `docs/spec.md` for the v1.0 specification.
