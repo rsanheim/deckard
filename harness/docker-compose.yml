@@ -26,6 +26,9 @@ services:
       dockerfile: harness/Dockerfile
     environment:
       DATABASE_URL: postgres://postgres:deckard@db-source:5432/harness
+      AR_ENCRYPTION_PRIMARY_KEY: source-primary-key
+      AR_ENCRYPTION_DETERMINISTIC_KEY: source-deterministic-key
+      AR_ENCRYPTION_KEY_DERIVATION_SALT: source-salt
     depends_on:
       db-source:
         condition: service_healthy
@@ -34,6 +37,9 @@ services:
     image: deckard-harness
     environment:
       DATABASE_URL: postgres://postgres:deckard@db-dest:5432/harness
+      AR_ENCRYPTION_PRIMARY_KEY: dest-primary-key
+      AR_ENCRYPTION_DETERMINISTIC_KEY: dest-deterministic-key
+      AR_ENCRYPTION_KEY_DERIVATION_SALT: dest-salt
     depends_on:
       db-dest:
         condition: service_healthy

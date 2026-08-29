@@ -15,7 +15,7 @@ module Deckard
     def dump_replicant(dumper, options = {})
       dumper.once(self.class.name, replicant_source_id) do
         omissions = replicant_omissions(options)
-        attributes = self.attributes.except(*omissions.map(&:to_s))
+        attributes = self.attributes.except(*self.class.deckard_generated_columns, *omissions.map(&:to_s))
         dump_belongs_to_replicants(dumper, attributes, omissions, options)
         dumper.write(self.class.name, replicant_source_id, attributes, self)
         dump_has_one_replicants(dumper, omissions, options)
@@ -108,6 +108,14 @@ module Deckard
         @deckard_model_config ||= ModelConfig.new(
           superclass.respond_to?(:deckard_model_config) ? superclass.deckard_model_config : nil
         )
+      end
+
+      # Stored generated columns (GENERATED ALWAYS AS ... STORED) are never
+      # dumped: the destination database computes them, and PostgreSQL
+      # rejects explicit inserts into them.
+      def deckard_generated_columns
+        @deckard_generated_columns ||=
+          columns.select { |column| column.respond_to?(:virtual?) && column.virtual? }.map(&:name)
       end
 
       # Load one streamed replicant: reuse an existing row when a natural key

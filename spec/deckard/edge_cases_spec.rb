@@ -29,6 +29,16 @@ RSpec.describe "ActiveRecord edge cases" do
     /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
   end
 
+  def frames(io)
+    io.rewind
+    result = []
+    while (frame = Marshal.load(io)) != Deckard::STREAM_END
+      result << frame unless frame == Deckard::STREAM_HEADER
+    end
+    io.rewind
+    result
+  end
+
   it "remaps database-generated UUID primary keys" do
     ship = Ship.create!(name: "Off-world shuttle")
     cargo = Cargo.create!(ship: ship, contents: "memories")
@@ -82,11 +92,7 @@ RSpec.describe "ActiveRecord edge cases" do
 
     io, _ = stream(book, omit: [:books])
 
-    io.rewind
-    frames = []
-    while (frame = Marshal.load(io)) != Deckard::STREAM_END
-      frames << frame unless frame == Deckard::STREAM_HEADER
-    end
+    frames = frames(io)
     expect(frames.map(&:first)).to eq(%w[SpecialLibrary Book])
     book_frame = frames.last
     expect(book_frame[2]["library_id"]).to eq([:id, "SpecialLibrary", library.id])
@@ -119,6 +125,43 @@ RSpec.describe "ActiveRecord edge cases" do
     expect(loaded.blob).to eq("\x00\xFF\x01deckard".b)
     expect(loaded.token).to eq(source.token)
     expect(loaded.status).to eq("live")
+  end
+
+  it "skips stored generated columns so the destination computes them" do
+    source = Artifact.create!(name: "esper photograph")
+    expect(source.name_upper).to eq("ESPER PHOTOGRAPH")
+
+    io, _ = stream(source)
+    expect(frames(io).sole[2]).not_to have_key("name_upper")
+
+    Deckard::Loader.new(io).load
+
+    expect(Artifact.where.not(id: source.id).sole.name_upper).to eq("ESPER PHOTOGRAPH")
+  end
+
+  it "round trips a native PostgreSQL enum column" do
+    source = Artifact.create!(name: "esper photograph", mood: "ominous")
+
+    io, _ = stream(source)
+    Deckard::Loader.new(io).load
+
+    expect(Artifact.where.not(id: source.id).sole.mood).to eq("ominous")
+  end
+
+  it "carries encrypted attributes as plaintext in the stream and re-encrypts on load" do
+    source = Artifact.create!(name: "esper photograph", notes: "unicorn dream")
+
+    io, _ = stream(source)
+    expect(frames(io).sole[2]["notes"]).to eq("unicorn dream")
+
+    Deckard::Loader.new(io).load
+
+    loaded = Artifact.where.not(id: source.id).sole
+    expect(loaded.notes).to eq("unicorn dream")
+    raw = Artifact.connection.select_value(
+      "SELECT notes FROM artifacts WHERE id = #{Artifact.connection.quote(loaded.id)}"
+    )
+    expect(raw).not_to include("unicorn dream")
   end
 
   it "raises a clear error dumping a composite primary key model" do

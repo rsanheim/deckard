@@ -29,6 +29,26 @@ check.call(origami&.comments&.sole&.author&.name == "Rachael", "origami comment 
 check.call(Comment.distinct.pluck(:author_id).sort == Author.pluck(:id).sort, "comment author_ids do not match the loaded authors")
 check.call(Profile.find_by(bio: "More human than human")&.author&.name == "Rachael", "Rachael's profile not linked")
 
+# Encrypted attributes: the destination has different encryption keys than
+# the source (docker-compose.yml), so a readable value here proves deckard
+# streamed plaintext and re-encrypted with this environment's keys.
+rachael = Author.find_by(name: "Rachael")
+check.call(rachael&.private_notes == "Memories! You're talking about memories.",
+  "encrypted private_notes did not decrypt with destination keys")
+if rachael
+  raw_notes = Author.connection.select_value(
+    "SELECT private_notes FROM authors WHERE id = #{Author.connection.quote(rachael.id)}"
+  )
+  check.call(!raw_notes.to_s.include?("Memories!"), "private_notes stored as plaintext, not re-encrypted")
+end
+
+# Native PostgreSQL enum column.
+check.call(nexus&.status == "published", "post status enum was not replicated")
+
+# Stored generated column, computed by this database (never streamed).
+check.call(Comment.where.not(search_blob: nil).count == 3,
+  "generated search_blob columns were not computed on the destination")
+
 # Prove the callback/validation guards are armed in this environment: a
 # normal create! must fail here, so a clean load means deckard bypassed them.
 begin

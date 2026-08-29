@@ -112,7 +112,9 @@ dump User.all, associations: [:email_addresses], omit: [:created_at]
 The stream is Ruby `Marshal` data: load streams only from applications and
 operators you trust, over an authenticated transport such as SSH. Deckard is
 an internal operator tool, not a public import format. Dumped production data
-lands unmasked in the destination database — treat dumps accordingly.
+lands unmasked in the destination database — treat dumps accordingly. That
+includes ActiveRecord-encrypted attributes: they travel through the stream as
+plaintext and are re-encrypted with the destination's keys on load.
 
 ## Development
 

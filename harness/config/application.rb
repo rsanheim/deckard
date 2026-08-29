@@ -38,5 +38,15 @@ module Harness
 
     # Don't generate system test files.
     config.generators.system_tests = nil
+
+    # Each compose service gets different keys (see docker-compose.yml) so
+    # the stream test proves deckard re-encrypts with the destination's
+    # keys rather than copying source ciphertext.
+    config.active_record.encryption.primary_key =
+      ENV.fetch("AR_ENCRYPTION_PRIMARY_KEY", "harness-local-primary")
+    config.active_record.encryption.deterministic_key =
+      ENV.fetch("AR_ENCRYPTION_DETERMINISTIC_KEY", "harness-local-deterministic")
+    config.active_record.encryption.key_derivation_salt =
+      ENV.fetch("AR_ENCRYPTION_KEY_DERIVATION_SALT", "harness-local-salt")
   end
 end

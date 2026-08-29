@@ -3,6 +3,8 @@ class Author < ApplicationRecord
   has_many :posts
   has_many :comments
 
+  encrypts :private_notes
+
   # These guards prove Deckard's callback/validation bypass: any load that
   # runs them fails loudly. Seeding sets DECKARD_SEED to get past them.
   before_create :forbid_callbacks

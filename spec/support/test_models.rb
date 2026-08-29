@@ -108,9 +108,12 @@ class Employee < ActiveRecord::Base
   belongs_to :manager, class_name: "Employee", optional: true
 end
 
-# A spread of PostgreSQL column types that must survive dump and load.
+# A spread of PostgreSQL column types that must survive dump and load,
+# including a stored generated column, a native PG enum, and an encrypted
+# attribute.
 class Artifact < ActiveRecord::Base
   enum :status, {draft: 0, live: 1}
+  encrypts :notes
 end
 
 # Composite primary key (derived from the schema): unsupported, must raise.

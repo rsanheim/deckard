@@ -31,6 +31,7 @@ module DeckardTestDatabase
     create_database
     ActiveRecord::Base.establish_connection(URL)
     check_server_version
+    configure_encryption
     define_schema
     nil
   rescue PG::Error, ActiveRecord::ConnectionNotEstablished => e
@@ -59,9 +60,20 @@ module DeckardTestDatabase
   end
   private_class_method :check_server_version
 
+  def self.configure_encryption
+    ActiveRecord::Encryption.configure(
+      primary_key: "deckard-test-primary-key",
+      deterministic_key: "deckard-test-deterministic-key",
+      key_derivation_salt: "deckard-test-salt"
+    )
+  end
+  private_class_method :configure_encryption
+
   def self.define_schema
     ActiveRecord::Schema.verbose = false
     ActiveRecord::Schema.define do
+      execute "DROP TYPE IF EXISTS artifact_mood CASCADE"
+      create_enum :artifact_mood, %w[calm ominous]
       create_table :authors, force: :cascade do |t|
         t.string :name, null: false
         t.timestamps
@@ -143,6 +155,9 @@ module DeckardTestDatabase
         t.binary :blob
         t.uuid :token
         t.integer :status, null: false, default: 0
+        t.virtual :name_upper, type: :string, as: "upper(name)", stored: true
+        t.enum :mood, enum_type: :artifact_mood
+        t.text :notes
       end
 
       create_table :itineraries, primary_key: [:vehicle_id, :leg], force: :cascade do |t|
