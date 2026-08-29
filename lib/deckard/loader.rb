@@ -14,19 +14,35 @@ module Deckard
     end
 
     def load
-      header = read_frame
-      unless header == STREAM_HEADER
-        raise InvalidStream, "invalid stream header (expected #{STREAM_HEADER.inspect})"
-      end
+      with_transaction do
+        header = read_frame
+        unless header == STREAM_HEADER
+          raise InvalidStream, "invalid stream header (expected #{STREAM_HEADER.inspect})"
+        end
 
-      loop do
-        frame = read_frame
-        break if frame == STREAM_END
-        load_replicant(frame)
+        loop do
+          frame = read_frame
+          break if frame == STREAM_END
+          load_replicant(frame)
+        end
       end
     end
 
     private
+
+    # The whole load runs in one destination transaction, committing only
+    # after a valid end marker. Without a database connection (custom-object
+    # streams outside a booted app) the load runs bare.
+    def with_transaction(&block)
+      return yield unless defined?(::ActiveRecord::Base)
+
+      begin
+        ::ActiveRecord::Base.connection_pool
+      rescue ::ActiveRecord::ConnectionNotEstablished
+        return yield
+      end
+      ::ActiveRecord::Base.transaction(&block)
+    end
 
     def read_frame
       Marshal.load(@input)

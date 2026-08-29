@@ -8,6 +8,8 @@ gemspec
 gem "irb"
 gem "rake", "~> 13.0"
 
+gem "pg", "~> 1.6"
+
 gem "rspec", "~> 3.13"
 
 gem "standard", "~> 1.56"

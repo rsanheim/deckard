@@ -9,6 +9,7 @@ module Deckard
     def initialize(output)
       @output = output
       @dumped = Set.new
+      @in_progress = Set.new
       @counts = Hash.new(0)
       Marshal.dump(STREAM_HEADER, @output)
     end
@@ -21,10 +22,31 @@ module Deckard
 
       if object.respond_to?(:dump_replicant)
         object.dump_replicant(self, options)
+      elsif object.respond_to?(:find_each)
+        object.find_each { |item| dump(item, options) }
       elsif object.respond_to?(:each)
         object.each { |item| dump(item, options) }
       else
         raise DumpError, "#{object.class} does not implement dump_replicant"
+      end
+    end
+
+    # Skip the block entirely when [type, id] has already been dumped, and
+    # detect belongs_to dependency cycles: re-entering for an identity whose
+    # dump is still in progress means no valid emission order exists.
+    def once(type, id)
+      key = [type.to_s, id]
+      return if @dumped.include?(key)
+      if @in_progress.include?(key)
+        raise DumpError,
+          "dependency cycle detected while dumping #{key[0]}(#{id}): it must be emitted before itself"
+      end
+
+      @in_progress.add(key)
+      begin
+        yield
+      ensure
+        @in_progress.delete(key)
       end
     end
 
