@@ -43,3 +43,45 @@ end
 class CycleB < ActiveRecord::Base
   belongs_to :cycle_a, optional: true
 end
+
+class Reader < ActiveRecord::Base
+  has_many :reader_emails
+
+  replicate do
+    natural_key :login
+  end
+end
+
+class ReaderEmail < ActiveRecord::Base
+  belongs_to :reader
+
+  replicate do
+    natural_key :reader_id, :email
+  end
+end
+
+class Library < ActiveRecord::Base
+  has_many :books
+
+  replicate do
+    associations :books
+    omit :secret
+  end
+end
+
+class SpecialLibrary < Library
+end
+
+class Book < ActiveRecord::Base
+  belongs_to :library, optional: true
+end
+
+# Deliberately broken: its replicate block names an association that does
+# not exist, which must raise at dump time.
+class MisconfiguredLibrary < ActiveRecord::Base
+  self.table_name = "libraries"
+
+  replicate do
+    associations :branches
+  end
+end

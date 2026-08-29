@@ -9,7 +9,8 @@ require "active_record"
 module DeckardTestDatabase
   URL = ENV.fetch("DECKARD_TEST_DATABASE_URL", "postgres://127.0.0.1:5433/deckard_gem_test")
 
-  TABLES = %w[comments payments profiles posts authors cycle_as cycle_bs].freeze
+  TABLES = %w[comments payments profiles posts authors cycle_as cycle_bs
+    reader_emails readers books libraries].freeze
 
   # Connect, create the test database if missing, verify the server runs
   # PostgreSQL 18 (matching the e2e harness), and define the schema.
@@ -92,6 +93,28 @@ module DeckardTestDatabase
 
       create_table :cycle_bs, force: :cascade do |t|
         t.references :cycle_a
+      end
+
+      create_table :readers, force: :cascade do |t|
+        t.string :login, null: false
+        t.string :email
+      end
+
+      create_table :reader_emails, force: :cascade do |t|
+        t.references :reader, null: false
+        t.string :email, null: false
+        t.string :label
+      end
+
+      create_table :libraries, force: :cascade do |t|
+        t.string :name, null: false
+        t.string :secret
+        t.string :type
+      end
+
+      create_table :books, force: :cascade do |t|
+        t.references :library
+        t.string :title, null: false
       end
     end
   end
