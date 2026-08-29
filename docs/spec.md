@@ -1212,7 +1212,16 @@ Implement:
 - Source-to-destination ID map.
 - Basic custom-object hooks.
 
-### Phase 2: ActiveRecord basics
+### Phase 2: Integration test harness
+
+Build this early so every later phase can be verified against real streaming:
+
+- Test Rails app with at least 4 models covering `belongs_to`, `has_one`, and `has_many` associations.
+- Real PostgreSQL database.
+- Two Docker containers (source and destination), each running the test app against its own
+  PostgreSQL database, piping an actual dump stream from one to the other.
+
+### Phase 3: ActiveRecord basics
 
 Implement:
 
@@ -1226,7 +1235,7 @@ Implement:
 - Callback and validation bypass.
 - Transactional load.
 
-### Phase 3: Original model API
+### Phase 4: Original model API
 
 Implement:
 
@@ -1246,7 +1255,7 @@ Then implement:
 - Configuration inheritance.
 - Natural-key updates.
 
-### Phase 4: Original CLI
+### Phase 5: Original CLI
 
 Implement:
 
@@ -1264,7 +1273,7 @@ Then add:
 - Pipe-failure handling.
 - SSH workflow documentation.
 
-### Phase 5: Hardening and release
+### Phase 6: Hardening and release
 
 Complete:
 

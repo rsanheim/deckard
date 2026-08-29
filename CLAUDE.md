@@ -1,0 +1,49 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+Deckard is a Ruby gem (pre-implementation: currently a `bundle gem` skeleton plus a spec) that streams
+ActiveRecord objects between Rails environments — a modern resurrection of the `replicate` gem targeting
+ActiveRecord 8+ and PostgreSQL. Typical use: pipe production records into a local dev database over SSH.
+
+**`docs/spec.md` is the authoritative v1.0 specification.** Read it before implementing anything. It defines
+the API, stream format, correctness invariants (section 17), acceptance criteria (section 18), implementation
+order (section 19), and — critically — long lists of explicit non-goals. Do not add features, options,
+adapters, or abstractions the spec excludes.
+
+## Commands
+
+```bash
+bin/setup                 # install dependencies
+bundle exec rake          # default task: specs + standard (lint)
+bundle exec rake spec     # tests only
+bundle exec rspec spec/deckard_spec.rb          # one spec file
+bundle exec rspec spec/deckard_spec.rb:12       # one example by line
+bundle exec standardrb    # lint (standardrb --fix to autocorrect)
+bin/console               # IRB with the gem loaded
+```
+
+## Architecture (from the spec)
+
+The operating model is a Unix pipeline: dump on the source (`deckard -r ./config/environment -d "User.find(1)"`),
+stream versioned Marshal frames over stdout, load on the destination (`deckard -r ./config/environment -l`)
+inside one transaction that commits only after a valid end marker. Primary keys are remapped: the destination
+generates new IDs and foreign keys are rewritten via a source-to-destination ID map.
+
+Planned internal structure (spec section 16) — six small classes, no adapter frameworks or registries:
+
+- `Deckard::CLI` — parse `-r`/`-d`/`-l`, boot the app, wire stdin/stdout
+- `Deckard::Dumper` — dedupe by `[type, source_id]`, call `dump_replicant`, write frames
+- `Deckard::Loader` — read frames incrementally, resolve `[:id, "User", 1234]` reference tuples, call `load_replicant`, manage the transaction
+- `Deckard::ModelConfig` — backs the `replicate do ... end` model DSL (`associations`, `natural_key`, `omit`)
+- `Deckard::ActiveRecord` — traversal (belongs_to and has_one automatic; has_many opt-in), callback/validation-free inserts via PostgreSQL `RETURNING`
+- `Deckard::Status` — counts by type on stderr; stdout carries only the stream
+
+Key design constraints to preserve:
+
+- Streaming: neither side materializes the full object graph; memory grows only with the identity set and ID map.
+- The custom-object protocol (`dump_replicant` / `load_replicant`) is the core; ActiveRecord support is an implementation of it, not a special case.
+- Unsupported cases (polymorphic associations, composite PKs, dependency cycles) raise specific errors from the small `Deckard::Error` hierarchy rather than being approximated.
+- The stream is trusted Ruby `Marshal` — an operator tool over SSH, never a public import format.
