@@ -55,8 +55,13 @@ module Deckard
         next if referenced.nil?
 
         dumper.dump(referenced, options)
-        attributes[foreign_key] =
-          [:id, referenced.class.name, referenced.send(:replicant_source_id)]
+        referenced_id = referenced.send(:replicant_source_id)
+        unless dumper.dumped?(referenced.class.name, referenced_id)
+          raise DumpError,
+            "dependency cycle detected: #{self.class}(#{replicant_source_id}).#{reflection.name} " \
+            "references #{referenced.class.name}(#{referenced_id}), which cannot be emitted first"
+        end
+        attributes[foreign_key] = [:id, referenced.class.name, referenced_id]
       end
     end
 

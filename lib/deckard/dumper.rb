@@ -31,16 +31,14 @@ module Deckard
       end
     end
 
-    # Skip the block entirely when [type, id] has already been dumped, and
-    # detect belongs_to dependency cycles: re-entering for an identity whose
-    # dump is still in progress means no valid emission order exists.
+    # Runs the block once per [type, id]. Skipped when that identity is
+    # already written, or when its dump is in progress higher up the stack -
+    # a traversal loop (e.g. record -> parent -> parent's collection ->
+    # record) that the in-progress caller finishes writing itself. Callers
+    # that require the identity to be emitted first check #dumped? after.
     def once(type, id)
       key = [type.to_s, id]
-      return if @dumped.include?(key)
-      if @in_progress.include?(key)
-        raise DumpError,
-          "dependency cycle detected while dumping #{key[0]}(#{id}): it must be emitted before itself"
-      end
+      return if @dumped.include?(key) || @in_progress.include?(key)
 
       @in_progress.add(key)
       begin
@@ -48,6 +46,10 @@ module Deckard
       ensure
         @in_progress.delete(key)
       end
+    end
+
+    def dumped?(type, id)
+      @dumped.include?([type.to_s, id])
     end
 
     # Called by dump_replicant implementations to emit one replicant tuple.

@@ -10,7 +10,8 @@ module DeckardTestDatabase
   URL = ENV.fetch("DECKARD_TEST_DATABASE_URL", "postgres://127.0.0.1:5433/deckard_gem_test")
 
   TABLES = %w[comments payments profiles posts authors cycle_as cycle_bs
-    reader_emails readers books libraries].freeze
+    reader_emails readers books libraries cargos ships employees artifacts
+    itineraries].freeze
 
   # Connect, create the test database if missing, verify the server runs
   # PostgreSQL 18 (matching the e2e harness), and define the schema.
@@ -115,6 +116,39 @@ module DeckardTestDatabase
       create_table :books, force: :cascade do |t|
         t.references :library
         t.string :title, null: false
+      end
+
+      create_table :ships, id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+        t.string :name, null: false
+      end
+
+      create_table :cargos, id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+        t.references :ship, type: :uuid, null: false
+        t.string :contents, null: false
+      end
+
+      create_table :employees, force: :cascade do |t|
+        t.string :name, null: false
+        t.references :manager
+      end
+
+      create_table :artifacts, force: :cascade do |t|
+        t.string :name, null: false
+        t.jsonb :meta
+        t.string :tags, array: true
+        t.decimal :price, precision: 10, scale: 2
+        t.boolean :active
+        t.date :released_on
+        t.datetime :measured_at, precision: 6
+        t.binary :blob
+        t.uuid :token
+        t.integer :status, null: false, default: 0
+      end
+
+      create_table :itineraries, primary_key: [:vehicle_id, :leg], force: :cascade do |t|
+        t.integer :vehicle_id, null: false
+        t.integer :leg, null: false
+        t.string :note
       end
     end
   end

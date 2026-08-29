@@ -92,3 +92,27 @@ class MisconfiguredLibrary < ActiveRecord::Base
     associations :branches
   end
 end
+
+# UUID primary keys, database-generated.
+class Ship < ActiveRecord::Base
+  has_many :cargos
+end
+
+class Cargo < ActiveRecord::Base
+  belongs_to :ship
+end
+
+# Self-referential belongs_to with class_name and a non-conventional
+# foreign key name.
+class Employee < ActiveRecord::Base
+  belongs_to :manager, class_name: "Employee", optional: true
+end
+
+# A spread of PostgreSQL column types that must survive dump and load.
+class Artifact < ActiveRecord::Base
+  enum :status, {draft: 0, live: 1}
+end
+
+# Composite primary key (derived from the schema): unsupported, must raise.
+class Itinerary < ActiveRecord::Base
+end
