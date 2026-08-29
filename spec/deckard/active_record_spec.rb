@@ -1,120 +1,16 @@
 # frozen_string_literal: true
 
 require "stringio"
-require "uri"
-require "active_record"
+require_relative "../support/test_database"
+require_relative "../support/test_models"
 
-# These specs run against a real PostgreSQL database - by default a local
-# server on port 5433 (libpq defaults fill in the OS user). Point
-# DECKARD_TEST_DATABASE_URL elsewhere to override. When no server is
-# reachable the whole file is skipped with a pointer.
-DECKARD_TEST_DATABASE_URL = ENV.fetch(
-  "DECKARD_TEST_DATABASE_URL",
-  "postgres://127.0.0.1:5433/deckard_gem_test"
-)
-
-deckard_pg_error = nil
-begin
-  require "pg"
-  admin_uri = URI(DECKARD_TEST_DATABASE_URL)
-  database = admin_uri.path.delete_prefix("/")
-  admin_uri.path = "/postgres"
-  admin = PG.connect(admin_uri.to_s)
-  if admin.exec_params("SELECT 1 FROM pg_database WHERE datname = $1", [database]).ntuples.zero?
-    admin.exec("CREATE DATABASE #{admin.quote_ident(database)}")
-  end
-  admin.close
-
-  ActiveRecord::Base.establish_connection(DECKARD_TEST_DATABASE_URL)
-  ActiveRecord::Schema.verbose = false
-  ActiveRecord::Schema.define do
-    create_table :authors, force: :cascade do |t|
-      t.string :name, null: false
-      t.timestamps
-    end
-
-    create_table :profiles, force: :cascade do |t|
-      t.references :author, null: false
-      t.string :bio
-    end
-
-    create_table :posts, force: :cascade do |t|
-      t.references :author, null: false
-      t.string :title, null: false
-    end
-
-    create_table :comments, force: :cascade do |t|
-      t.references :post, null: false
-      t.references :author, null: false
-      t.string :body
-    end
-
-    create_table :payments, force: :cascade do |t|
-      t.references :billable, polymorphic: true
-      t.integer :amount
-    end
-
-    create_table :cycle_as, force: :cascade do |t|
-      t.references :cycle_b
-    end
-
-    create_table :cycle_bs, force: :cascade do |t|
-      t.references :cycle_a
-    end
-  end
-rescue => e
-  deckard_pg_error = "#{e.class}: #{e.message}"
-end
-
-unless deckard_pg_error
-  class Author < ActiveRecord::Base
-    has_one :profile
-    has_many :posts
-
-    # Both guards prove the loader's bypass: any load that runs them fails.
-    before_save { self.class.callbacks_fired << name }
-    validate { errors.add(:base, "always invalid") }
-
-    def self.callbacks_fired
-      @callbacks_fired ||= []
-    end
-  end
-
-  class Profile < ActiveRecord::Base
-    belongs_to :author
-  end
-
-  class Post < ActiveRecord::Base
-    belongs_to :author
-    has_many :comments
-  end
-
-  class Comment < ActiveRecord::Base
-    belongs_to :post
-    belongs_to :author
-  end
-
-  class Payment < ActiveRecord::Base
-    belongs_to :billable, polymorphic: true, optional: true
-  end
-
-  class CycleA < ActiveRecord::Base
-    belongs_to :cycle_b, optional: true
-  end
-
-  class CycleB < ActiveRecord::Base
-    belongs_to :cycle_a, optional: true
-  end
-end
-
-RSpec.describe Deckard::ActiveRecord, skip: deckard_pg_error && <<~MSG do
-  PostgreSQL unavailable at #{DECKARD_TEST_DATABASE_URL} (#{deckard_pg_error}).
-  Start a local server there or set DECKARD_TEST_DATABASE_URL.
-MSG
-
+RSpec.describe Deckard::ActiveRecord do
   before do
-    tables = %w[comments payments profiles posts authors cycle_as cycle_bs]
-    ActiveRecord::Base.connection.execute("TRUNCATE #{tables.join(", ")} RESTART IDENTITY")
+    if (error = DeckardTestDatabase.setup)
+      skip "PostgreSQL unavailable at #{DeckardTestDatabase::URL} (#{error}). " \
+        "Start a server there or set DECKARD_TEST_DATABASE_URL."
+    end
+    DeckardTestDatabase.truncate
     Author.callbacks_fired.clear
   end
 
