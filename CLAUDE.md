@@ -17,13 +17,32 @@ adapters, or abstractions the spec excludes.
 
 ```bash
 bin/setup                 # install dependencies
-bundle exec rake          # default task: specs + standard (lint)
+bundle exec rake          # default task: specs + standard (lint) + ratchet
 bundle exec rake spec     # tests only
+bundle exec rake e2e      # end-to-end stream test inside docker compose
 bundle exec rspec spec/deckard_spec.rb          # one spec file
 bundle exec rspec spec/deckard_spec.rb:12       # one example by line
 bundle exec standardrb    # lint (standardrb --fix to autocorrect)
 bin/console               # IRB with the gem loaded
 ```
+
+## Test tiers
+
+Two tiers with a hard boundary:
+
+- Unit/integration (`spec/`): a normal gem suite, runs on the host via `bundle exec rake`.
+  The ActiveRecord specs use a real local PostgreSQL
+  (default `postgres://127.0.0.1:5433/deckard_gem_test`, override with
+  `DECKARD_TEST_DATABASE_URL`) and skip loudly when no server is reachable.
+- E2E / full-stack (`harness/`): a real Rails 8.1 app streamed between two containers,
+  entirely inside docker compose — source app + source PostgreSQL, destination app +
+  destination PostgreSQL, no ports exposed to the host. Run with `bundle exec rake e2e`
+  (wraps `harness/bin/stream_test`). New capabilities land with unit/integration specs;
+  the e2e test proves the real pipeline (`bin/dump | bin/load`) still works.
+
+The tiers must not intertwine: the gem suite never depends on compose containers, and
+the harness never runs the gem's rspec suite — it exercises the gem only the way an
+operator would, through real apps and a real pipe.
 
 ## Architecture (from the spec)
 

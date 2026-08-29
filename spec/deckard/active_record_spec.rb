@@ -4,12 +4,13 @@ require "stringio"
 require "uri"
 require "active_record"
 
-# These specs run against a real PostgreSQL database - by default the
-# harness's source database container (harness/docker-compose.yml, port
-# 5433). When it is unreachable the whole file is skipped with a pointer.
+# These specs run against a real PostgreSQL database - by default a local
+# server on port 5433 (libpq defaults fill in the OS user). Point
+# DECKARD_TEST_DATABASE_URL elsewhere to override. When no server is
+# reachable the whole file is skipped with a pointer.
 DECKARD_TEST_DATABASE_URL = ENV.fetch(
   "DECKARD_TEST_DATABASE_URL",
-  "postgres://postgres:deckard@127.0.0.1:55433/deckard_gem_test"
+  "postgres://127.0.0.1:5433/deckard_gem_test"
 )
 
 deckard_pg_error = nil
@@ -107,8 +108,8 @@ unless deckard_pg_error
 end
 
 RSpec.describe Deckard::ActiveRecord, skip: deckard_pg_error && <<~MSG do
-  PostgreSQL unavailable (#{deckard_pg_error}).
-  Start it with: docker compose -f harness/docker-compose.yml up -d db_source
+  PostgreSQL unavailable at #{DECKARD_TEST_DATABASE_URL} (#{deckard_pg_error}).
+  Start a local server there or set DECKARD_TEST_DATABASE_URL.
 MSG
 
   before do
