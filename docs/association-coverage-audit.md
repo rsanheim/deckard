@@ -2,13 +2,13 @@
 
 *Date:* 2026-08-30
 *Method:* two research agents mapped every association type and graph topology to actual
-tests (file:line evidence below); the load-bearing gap claims were spot-checked with grep,
-and every behavioral hypothesis was then verified by running a throwaway script against the
-real gem test database (PostgreSQL 18, the same `Dumper`/`Loader`/`ActiveRecord` code the
-specs use). Each "Verified:" line below reports what actually happened when run. The full
-default suite was green before and after (54 examples). No lib or spec code was changed.
+tests; the gap claims were spot-checked with grep, and every behavioral question was then
+answered by running a throwaway script against the real gem test database (PostgreSQL 18,
+the same `Dumper`/`Loader`/`ActiveRecord` code the specs use). Each "Verified by running:"
+line reports what actually happened. The full default suite was green before and after
+(54 examples). No lib or spec code was changed.
 
-Contract context (`docs/spec.md` section 13/4): belongs_to and has_one traverse
+Contract context (`docs/spec.md` sections 4 and 13): belongs_to and has_one traverse
 automatically; has_many only via explicit `associations` opt-in. Polymorphic belongs_to
 must raise `Deckard::UnsupportedAssociation`. Explicitly *not* part of the v1.0 contract
 (may work accidentally, no promised behavior): HABTM join-table replication,
@@ -17,55 +17,208 @@ dispatch, deferrable dependency cycles.
 
 ## Association types
 
-| Association | Verdict | Evidence / gap |
-|---|---|---|
-| belongs_to | Covered | Parent copied + FK remapped: `spec/deckard/active_record_spec.rb:32-49`. Nil FK stays nil: `active_record_spec.rb:75-83`. Omit by name and by FK column: `spec/deckard/model_api_spec.rb:102-116`. Optional (`Book`) and required (`Profile`) both exercised. Gap: no test isolates required-belongs_to-with-nil-FK (would surface as a normal NOT NULL failure on load). |
-| has_one | Partial | Child discovered, FK remapped: `active_record_spec.rb:51-59`. Absent child covered only implicitly (exact `dumper.counts` assertions would catch a phantom dump). Gap: no natural-key replacement test on a has_one target — `Profile` has no `natural_key`; the only update-in-place test is `Reader`/`ReaderEmail` (`model_api_spec.rb:118-136`), reached via has_many. Same loader code path, but the shape is untested. |
-| has_many | Covered (opt-in path) | Opt-in traversal + many children + FK remap: `model_api_spec.rb:36-46`. Reachable-via-two-paths dedup: `spec/deckard/edge_cases_spec.rb:72-87`. Per-dump `associations:` incl. classes lacking the name: `model_api_spec.rb:78-89`. Gaps: zero-children case had no test (verified: works — counts `{"Library"=>1}`, clean load, zero books); same-collection-dumped-twice tested only with plain-Ruby fixtures (`spec/deckard/stream_spec.rb:122-133`), not at the AR level. |
-| has_and_belongs_to_many | No coverage; silent half-work (verified) | Zero HABTM models or references in the repo. Verified by running: a `Club` with `associations :club_members` dumps the club and both members, the loader inserts copies of all three rows, and the join table gets nothing — the loaded club has zero members and no error is raised. This violates the spec's "fail clearly rather than approximate" principle even though HABTM is out of contract. |
-| has_many :through | No coverage; silent half-work for the far side, works via the join model (verified) | Naming the `:through` association (`associations :patients`) dumps physician + patients but never the appointment join rows — loaded copies exist with no linkage, silently. Naming the *join model* instead (`associations :appointments`) round-trips the full graph correctly: the appointment's two belongs_to pull in both sides and the new physician sees its patients. So the supported pattern exists; the far-side name is the trap. |
-| has_one :through | No coverage; round-tripped fully in the common shape (verified) | `Supplier -> Account -> AccountHistory` with `associations :account_history` loaded completely — but only because `has_one :account` is auto-traversed anyway, which carries the intermediate row; the configured through-name dumps the far side and dedup does the rest. A shape whose intermediate is not an automatic belongs_to/has_one would half-work like has_many :through. |
-| Polymorphic belongs_to | Covered | Populated raises `UnsupportedAssociation` with exact message: `active_record_spec.rb:119-127`. Nil does not raise: `active_record_spec.rb:75-83`. Omitting a populated polymorphic FK (verified): omission wins over the raise and `billable_id` is dropped — but `billable_type` still streams and loads, leaving a dangling type string ("Author") next to a nil id on the destination row. Probably should drop the type column alongside the FK. |
-| Polymorphic has_many / has_one | No coverage; fails clearly (verified) | No test model has the reverse side. Verified by running: `Author has_many :payments, as: :billable` opted in via `associations:` traverses into the payment, whose populated polymorphic belongs_to then raises `UnsupportedAssociation`. So the reverse side is unreachable in practice and fails loudly — no code change needed, one documenting test would close it. |
-| Self-referential | Covered (belongs_to) | `Employee belongs_to :manager, class_name: "Employee"`, 3-level chain round-tripped with remapped FKs: `edge_cases_spec.rb:56-70`. Self-loop row (`manager_id == id`), verified: raises `Deckard::DumpError` "dependency cycle detected: Employee(1).manager references Employee(1)". True as far as the emit-order model goes, but a legitimately self-parented row cannot be dumped at all — decide whether that is acceptable v1.0 behavior (it matches "deferrable cycles are unsupported") or worth special-casing. No self-referential has_many test either way. |
-| STI | Partial | Subclass name streamed and referenced (`SpecialLibrary`, not `Library`): `edge_cases_spec.rb:89-99`. Config inheritance: `spec/deckard/model_config_spec.rb:23-38` and `model_api_spec.rb:61-69`. `type` column round-trip proven indirectly (STI-scoped `.sole` query passes). "Complicated STI dispatch" is an explicit spec non-goal. |
+### belongs_to — Covered
+
+We test that dumping a record pulls in its belongs_to parent, that the parent gets a new
+destination id, and that the child's foreign key points at that new id
+(`spec/deckard/active_record_spec.rb:27-44`). We test that a nil foreign key stays nil
+(`active_record_spec.rb:70-78`), and that omitting a belongs_to — by association name or
+by foreign-key column — skips the parent and drops the key from the stream
+(`spec/deckard/model_api_spec.rb:94-108`). Both optional (`Book`) and required
+(`Profile`) associations appear in the fixtures.
+
+We do not have a test for a *required* belongs_to whose foreign key is nil in the source
+row. Reading the code, that should just fail the destination's NOT NULL constraint as a
+normal load error, but no test says so.
+
+### has_one — Partial
+
+We test that dumping a record automatically includes its has_one child and remaps the
+child's foreign key (`active_record_spec.rb:46-54`). A record with *no* has_one child is
+only covered indirectly: several tests assert exact `dumper.counts` hashes, which would
+fail if a missing child were somehow dumped, but no test targets the absent-child case by
+name.
+
+We do not test loading a has_one child into a destination that already has one. No
+has_one target model has a `natural_key`, so the update-an-existing-row path is only ever
+tested through `Reader`/`ReaderEmail` (`model_api_spec.rb:110-128`), which are reached
+via a has_many. It is the same loader code either way, but the has_one shape itself is
+untested.
+
+### has_many — Covered for the opt-in path
+
+We test that a has_many named in the `replicate` block is traversed, that all children
+arrive with remapped foreign keys (`model_api_spec.rb:28-38`), that a record reachable
+both directly and through a configured collection is only written once
+(`spec/deckard/edge_cases_spec.rb:64-79`), and that per-dump `associations:` options
+apply to classes that have the association and skip classes that don't
+(`model_api_spec.rb:70-81`).
+
+We do not test a configured has_many with zero children. Verified by running: it works —
+the record dumps alone and loads cleanly. We also do not test dumping the same
+ActiveRecord collection twice in one script; the only dumped-twice test uses the
+plain-Ruby fixture objects (`spec/deckard/stream_spec.rb:122-133`).
+
+### has_and_belongs_to_many — No coverage; silently incomplete
+
+There are no HABTM models or tests anywhere in the repo. Verified by running: a `Club`
+with `associations :club_members` dumps the club and both members, the loader inserts
+copies of all three rows, and the join table gets nothing. The loaded club has zero
+members and no error is raised. HABTM is outside the v1.0 contract, but this violates
+the spec's own "fail clearly rather than approximate" rule — the data looks loaded and
+isn't connected.
+
+### has_many :through — No coverage; the obvious usage is silently incomplete
+
+There are no `:through` models or tests. Verified by running: naming the through
+association itself (`associations :patients`) dumps the physician and the patients but
+never the appointment join rows — the loaded copies exist with no connection between
+them, silently. Naming the *join model* instead (`associations :appointments`) works
+completely: each appointment's two belongs_to pull in both sides, and the loaded
+physician sees its patients. So a correct pattern exists today; the natural-looking one
+is the trap.
+
+### has_one :through — No coverage; happened to work in the common shape
+
+Verified by running: `Supplier -> Account -> AccountHistory` with
+`associations :account_history` round-trips completely — but only because `has_one
+:account` is traversed automatically anyway, which carries the intermediate row. A shape
+whose intermediate association is not an automatic belongs_to/has_one would lose the
+linkage the same way has_many :through does.
+
+### Polymorphic belongs_to — Covered, with one wart
+
+We test that a populated polymorphic belongs_to raises `UnsupportedAssociation` with a
+clear message (`active_record_spec.rb:114-122`) and that a nil one is left alone
+(`active_record_spec.rb:70-78`).
+
+We do not test omitting a *populated* polymorphic belongs_to. Verified by running: the
+omission wins over the raise and `billable_id` is dropped — but the `billable_type`
+column still streams and loads, so the destination row ends up with a type string
+("Author") next to a nil id. The omission should probably drop the type column too.
+
+### Polymorphic has_many / has_one (reverse side) — No coverage; fails clearly
+
+No test model has the reverse side (`has_many :payments, as: :billable`). Verified by
+running: opting one in traverses into the child, whose populated polymorphic belongs_to
+then raises `UnsupportedAssociation`. So this path cannot silently corrupt anything — it
+fails loudly — but no test documents that.
+
+### Self-referential — Covered for chains, not for self-loops
+
+We test a three-level manager chain (`Employee belongs_to :manager, class_name:
+"Employee"`) and assert the whole remapped chain survives the round trip
+(`edge_cases_spec.rb:48-62`).
+
+We do not test a row that references *itself* (`manager_id == id`). Verified by running:
+it raises `Deckard::DumpError` — "dependency cycle detected: Employee(1).manager
+references Employee(1)". That is consistent with the emit-order model, but it means a
+legitimately self-parented row cannot be dumped at all. Worth deciding whether that is
+acceptable v1.0 behavior or a case to support. There is also no self-referential
+has_many (`has_many :reports`) in the fixtures.
+
+### STI — Partial
+
+We test that a subclass streams under its actual class name and is referenced that way
+(`edge_cases_spec.rb:81-91`), and that `replicate` configuration is inherited by
+subclasses without leaking back into the parent (`spec/deckard/model_config_spec.rb:23-38`,
+`model_api_spec.rb:53-62`).
+
+We never assert the `type` column's value directly after load — it is proven only
+indirectly, because the assertions query through `SpecialLibrary`, whose STI scoping adds
+`WHERE type = 'SpecialLibrary'`. "Complicated STI dispatch" is an explicit spec non-goal.
 
 ## Identity, remapping, and graph topology
 
-| Item | Verdict | Evidence / gap |
-|---|---|---|
-| Source IDs differ from destination IDs | Covered | Gem spec: `active_record_spec.rb:32-49` (`where.not(id:)` + FK equality on new ids). E2E adds the stronger proof: destination sequences advanced to 100000 (`harness/script/reset_dest_sequences.rb`) and every loaded id asserted `>= 100000` (`harness/bin/verify:17-18`). |
-| Remapping across PK types | Covered | bigint: `active_record_spec.rb:32-49`. UUID: `edge_cases_spec.rb:42-54` (Ship/Cargo, `gen_random_uuid()` PKs). Harness is integer-only. |
-| Shared child / dedup | Covered | AR: `active_record_spec.rb:61-73` (one author, two referrers, counts == 1, both FKs converge). Protocol level: `stream_spec.rb:105-120`. E2E: cross-referenced authors, `harness/bin/verify:29`. |
-| Empty association | Works, untested | Nil belongs_to covered (`active_record_spec.rb:75-83`). Zero-dependents record verified by running: bare author dumps as `{"Author"=>1}` and loads cleanly. Needs a regression test, not a fix. |
-| One child / many children | Covered | `active_record_spec.rb:51-59`; `model_api_spec.rb:36-46`. |
-| Diamond graph | Partial | The re-entrancy variant (book -> library -> books collection -> same book) is tested: `edge_cases_spec.rb:72-87`. The classic two-arm diamond (A->B, A->C, both -> D) is only implied by shared-child tests, never named. |
-| Self-loop row | Raises (verified), untested | `manager_id == id` raises `DumpError` as a dependency cycle — see the self-referential row above. Behavior now known; a test should pin whichever behavior we decide is right. |
-| Actual dependency cycle | Covered | `CycleA`/`CycleB` raise `Deckard::DumpError` /dependency cycle/: `active_record_spec.rb:129-135`. |
-| Idempotency | Partial | Dump-twice-emits-once: `stream_spec.rb:122-133`. Natural-key reuse (update, no duplicate) and ambiguity error: `model_api_spec.rb:118-136`, `148-159`. Double-load verified by running: loading the same author+post stream twice yields duplicate rows (1 source + 2 loaded copies of each), exactly the spec 10.3 behavior ("never updates or deletes existing destination records" without a natural key) — correct, but asserted nowhere. |
-| Stream ordering | Partial | One direct frame-order assertion (`edge_cases_spec.rb:89-99`) plus the reference-precedes-object failure test (`stream_spec.rb:166-177`); every other round trip proves ordering only implicitly (a violation would raise `UnresolvedReference`). |
+### Source ids differ from destination ids — Covered
+
+The gem specs prove new rows exist at new ids and every foreign key points at the new
+parent (`active_record_spec.rb:27-44`). The e2e harness has the stronger proof: it
+advances the destination sequences to 100000 before loading
+(`harness/script/reset_dest_sequences.rb`) and asserts every loaded id is at least
+100000 (`harness/bin/verify:17-18`), so destination ids provably left the source range.
+
+### Primary-key types — Covered
+
+Foreign-key remapping is tested for bigint ids (`active_record_spec.rb:27-44`) and for
+database-generated UUIDs (`edge_cases_spec.rb:34-46`). The harness is integer-only.
+
+### Shared child — Covered
+
+One author referenced by two records is written once, and both loaded foreign keys
+converge on the single new author (`active_record_spec.rb:56-68`; protocol-level twin at
+`stream_spec.rb:105-120`; end-to-end at `harness/bin/verify:29`).
+
+### Empty associations — Work, but untested
+
+A nil belongs_to is tested (`active_record_spec.rb:70-78`). A record with no dependents
+at all, and a configured has_many with zero children, have no tests. Verified by
+running: both behave correctly — the record dumps alone and loads cleanly. These need
+regression tests, not fixes.
+
+### One child / many children — Covered
+
+`active_record_spec.rb:46-54` (one has_one child); `model_api_spec.rb:28-38` (two
+has_many children).
+
+### Diamond graphs — Partial
+
+The re-entrant variant is tested: a book whose library's configured collection points
+back at the book (`edge_cases_spec.rb:64-79`), which exercises the dumper's in-progress
+guard. The classic two-arm diamond — two distinct paths converging on one shared
+grandchild — is implied by the shared-child tests but never set up as its own case.
+
+### Self-loop row — Behavior now known, untested
+
+See the self-referential section above: `manager_id == id` raises `DumpError`. A test
+should pin whichever behavior we decide is right.
+
+### True dependency cycle — Covered
+
+`CycleA`/`CycleB` referencing each other raises `Deckard::DumpError` mentioning the
+cycle (`active_record_spec.rb:124-130`).
+
+### Idempotency — Partial
+
+Dumping the same object twice in one script emits it once (`stream_spec.rb:122-133`).
+Natural-key models update the existing destination row instead of duplicating
+(`model_api_spec.rb:110-128`) and an ambiguous natural key fails the load
+(`model_api_spec.rb:140-150`).
+
+We do not test loading the same stream twice. Verified by running: without a natural
+key, a second load inserts a second copy of every row. That matches spec section 10.3 —
+deckard never updates or deletes existing rows unless a natural key says to — so it is
+correct behavior, but no test asserts it.
+
+### Stream ordering — Partial
+
+Only one test asserts frame order directly (`edge_cases_spec.rb:81-91` — the library
+frame precedes the book that references it). Everywhere else, ordering is proven
+indirectly: a violation would raise `UnresolvedReference` on load, and that failure mode
+has its own test (`stream_spec.rb:166-177`).
 
 ## E2E harness topology
 
-The harness graph (Author/Profile/Post/Comment, dumped via `Comment.all`) exercises:
-belongs_to chains, has_one, shared authors, sequence-divergence id proof, encryption
-re-key, PG enum, generated column. It does not exercise UUID PKs, self-reference,
-diamonds, cycles, or natural keys — by design, those live in the gem-spec tier.
+The harness graph (Author/Profile/Post/Comment, dumped via `Comment.all`) exercises
+belongs_to chains, has_one, shared authors, the sequence-divergence id proof, encryption
+re-keying, a PG enum, and a generated column. It does not exercise UUID keys,
+self-reference, diamonds, cycles, or natural keys — by design, those live in the
+gem-spec tier.
 
 ## Proposed follow-ups (for review — none done)
 
 In-contract gaps — behavior verified correct, each needs a small regression test:
 
-- [ ] Zero-dependents record: dump a bare record, assert `counts == {"Type"=>1}` and clean load
-- [ ] Zero-children opted-in has_many (library with no books)
+- [ ] Zero-dependents record: dump a bare record, assert `counts == {"Type"=>1}` and a clean load
+- [ ] Zero-children opted-in has_many (a library with no books)
 - [ ] Double-load of a non-natural-key stream: assert the duplicate-rows behavior (spec 10.3)
-- [ ] has_one target with a natural key: pre-seed destination child, assert update-in-place, not a duplicate (same loader path as the Reader test, but the shape is untested)
+- [ ] has_one target with a natural key: pre-seed a destination child, assert it is updated in place rather than duplicated
 - [ ] Classic two-arm diamond, named as such, asserting single emission of the shared grandchild
-- [ ] Same AR collection dumped twice in one script emits rows once
+- [ ] Same ActiveRecord collection dumped twice in one script emits rows once
 - [ ] Self-loop row: pin the verified `DumpError` behavior with a test (or decide to support it and change code)
 - [ ] Polymorphic has_many reverse side: one test documenting the verified `UnsupportedAssociation` raise
 
 Verified warts needing a decision (behavior change, not just a test):
 
-- [ ] HABTM and far-side `has_many :through` named in `associations` silently half-work: target rows load, join rows/linkage never do, no error. Recommend raising `UnsupportedAssociation` for association macros other than belongs_to/has_one/has_many ("fail clearly rather than approximate"); the working alternative — opting in the join model, which round-trips fully — belongs in the error message and README
-- [ ] Omitting a populated polymorphic belongs_to drops the FK but streams the `*_type` column, loading a dangling type next to a nil id. Recommend dropping the type column alongside the FK when the omitted association is polymorphic
+- [ ] HABTM and far-side `has_many :through` silently load disconnected rows (verified above). Recommend raising `UnsupportedAssociation` for association macros other than belongs_to/has_one/has_many, and pointing at the working pattern — opt in the join model — in the error message and README
+- [ ] Omitting a populated polymorphic belongs_to leaves the `*_type` column behind, loading a dangling type next to a nil id. Recommend dropping the type column alongside the foreign key when the omitted association is polymorphic
