@@ -1,16 +1,11 @@
 # frozen_string_literal: true
 
 require "stringio"
-require_relative "../support/test_database"
+require_relative "../support/database_cleaner"
 require_relative "../support/test_models"
 
-RSpec.describe Deckard::ActiveRecord do
+RSpec.describe Deckard::ActiveRecord, :db do
   before do
-    if (error = DeckardTestDatabase.setup)
-      skip "PostgreSQL unavailable at #{DeckardTestDatabase::URL} (#{error}). " \
-        "Start a server there or set DECKARD_TEST_DATABASE_URL."
-    end
-    DeckardTestDatabase.truncate
     Author.callbacks_fired.clear
   end
 

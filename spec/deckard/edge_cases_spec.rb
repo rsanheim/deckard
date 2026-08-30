@@ -2,20 +2,12 @@
 
 require "securerandom"
 require "stringio"
-require_relative "../support/test_database"
+require_relative "../support/database_cleaner"
 require_relative "../support/test_models"
 
 # Coverage of the ActiveRecord shapes spec section 13 supports (and the ones
 # it requires to fail clearly), beyond the conventional models used elsewhere.
-RSpec.describe "ActiveRecord edge cases" do
-  before do
-    if (error = DeckardTestDatabase.setup)
-      skip "PostgreSQL unavailable at #{DeckardTestDatabase::URL} (#{error}). " \
-        "Start a server there or set DECKARD_TEST_DATABASE_URL."
-    end
-    DeckardTestDatabase.truncate
-  end
-
+RSpec.describe "ActiveRecord edge cases", :db do
   def stream(objects, options = {})
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)

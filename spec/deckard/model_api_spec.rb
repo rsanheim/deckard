@@ -1,18 +1,10 @@
 # frozen_string_literal: true
 
 require "stringio"
-require_relative "../support/test_database"
+require_relative "../support/database_cleaner"
 require_relative "../support/test_models"
 
-RSpec.describe "replicate model DSL" do
-  before do
-    if (error = DeckardTestDatabase.setup)
-      skip "PostgreSQL unavailable at #{DeckardTestDatabase::URL} (#{error}). " \
-        "Start a server there or set DECKARD_TEST_DATABASE_URL."
-    end
-    DeckardTestDatabase.truncate
-  end
-
+RSpec.describe "replicate model DSL", :db do
   def stream(objects, options = {})
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)
