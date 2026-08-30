@@ -1286,15 +1286,21 @@ Then add:
 
 Complete:
 
-- ActiveRecord 8 test matrix.
-- PostgreSQL integration tests.
-- Integer and UUID primary-key tests.
-- Large-record streaming tests.
-- Truncated-stream rollback tests.
-- Security warnings around `Marshal` and production data.
-- Gem packaging.
-- `deckard` executable.
-- README examples mirroring the original `replicate` README.
+- [ ] ActiveRecord 8 test matrix (currently 8.1 only).
+- [x] PostgreSQL integration tests.
+- [x] Integer and UUID primary-key tests.
+- [ ] Large-record streaming and performance tests (`rake perf`: memory
+      bounded per section 18.14, large attributes, throughput baseline).
+- [x] Truncated-stream rollback tests.
+- [x] Security warnings around `Marshal` and production data.
+- [ ] Gem packaging (gemspec summary/description/push-host TODOs remain).
+- [x] `deckard` executable.
+- [x] README examples mirroring the original `replicate` README.
+
+Also completed beyond the original list: ActiveRecord edge-case coverage
+(generated columns, native PostgreSQL enums, ActiveRecord encryption with
+cross-environment keys, STI references, self-referential associations,
+composite-PK errors), informed by the failure modes in clarice PR 964.
 
 ## 20. Deferred work
 

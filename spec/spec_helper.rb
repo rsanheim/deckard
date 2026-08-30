@@ -12,4 +12,7 @@ RSpec.configure do |config|
   config.expect_with :rspec do |c|
     c.syntax = :expect
   end
+
+  # Performance tests are slow and only run via `rake perf`.
+  config.filter_run_excluding perf: true unless ENV["DECKARD_PERF"]
 end
