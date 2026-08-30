@@ -68,8 +68,7 @@ RSpec.describe "replicate model DSL", :db do
   end
 
   it "includes per-dump associations, skipping classes that lack them" do
-    author = Author.new(name: "Rachael")
-    author.save!(validate: false)
+    author = Author.create!(name: "Rachael")
     Profile.create!(author: author, bio: "More human than human")
     Post.create!(author: author, title: "Nexus-6 field notes")
 
@@ -81,8 +80,7 @@ RSpec.describe "replicate model DSL", :db do
   end
 
   it "applies per-dump omissions to attributes and associations" do
-    author = Author.new(name: "Rachael")
-    author.save!(validate: false)
+    author = Author.create!(name: "Rachael")
     Profile.create!(author: author, bio: "unused")
 
     io, dumper = stream(author, omit: [:created_at, :profile])

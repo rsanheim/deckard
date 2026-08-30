@@ -18,6 +18,14 @@ module DeckardTestDatabase
     reader_emails readers books libraries cargos ships employees artifacts
     itineraries].freeze
 
+  class SourceRecord < ActiveRecord::Base
+    self.abstract_class = true
+  end
+
+  class DestinationRecord < ActiveRecord::Base
+    self.abstract_class = true
+  end
+
   # Connect, create the test database if missing, verify the server runs
   # PostgreSQL 18 (matching the e2e harness), and define the schema.
   # Memoized across calls; connection and setup failures propagate.
@@ -25,6 +33,7 @@ module DeckardTestDatabase
     return if @setup
 
     connect_and_define_schema(URL)
+    SourceRecord.establish_connection(URL)
     @setup = true
   end
 
@@ -32,6 +41,7 @@ module DeckardTestDatabase
     return if @destination_setup
 
     connect_and_define_schema(DESTINATION_URL)
+    DestinationRecord.establish_connection(DESTINATION_URL)
     @destination_setup = true
   ensure
     ActiveRecord::Base.establish_connection(URL)
@@ -106,6 +116,9 @@ module DeckardTestDatabase
       create_table :posts, force: :cascade do |t|
         t.references :author, null: false
         t.string :title, null: false
+        t.text :body
+        t.string :description
+        t.json :metadata
       end
 
       create_table :comments, force: :cascade do |t|

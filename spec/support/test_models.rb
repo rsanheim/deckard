@@ -9,9 +9,10 @@ class Author < ActiveRecord::Base
   has_one :profile
   has_many :posts
 
-  # Both guards prove the loader's bypass: any load that runs them fails.
+  # These guards let the loader specs prove that callbacks and validations
+  # are bypassed without making every Author fixture invalid.
   before_save { self.class.callbacks_fired << name }
-  validate { errors.add(:base, "always invalid") }
+  validate { errors.add(:base, "invalid replicant") if name == "Invalid Replicant" }
 
   def self.callbacks_fired
     @callbacks_fired ||= []

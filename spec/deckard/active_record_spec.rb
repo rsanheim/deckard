@@ -10,9 +10,7 @@ RSpec.describe Deckard::ActiveRecord, :db do
   end
 
   def create_author(name)
-    author = Author.new(name: name)
-    author.save!(validate: false)
-    author
+    Author.create!(name: name)
   end
 
   def stream(objects)
@@ -78,7 +76,8 @@ RSpec.describe Deckard::ActiveRecord, :db do
   end
 
   it "bypasses validations and callbacks on load" do
-    author = create_author("Rachael")
+    author = Author.new(name: "Invalid Replicant")
+    author.save!(validate: false)
     io, _ = stream(author)
     Author.callbacks_fired.clear
 
