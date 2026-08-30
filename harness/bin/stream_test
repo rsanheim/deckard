@@ -5,24 +5,24 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "==> building harness image"
-docker compose build app_source
+docker compose build --provenance=false --quiet app_source
 
-echo "==> starting databases"
-docker compose up -d --wait db-source db-dest
+echo "==> starting harness"
+docker compose up -d --wait db-source db-dest app_source app_dest
 
 echo "==> preparing and seeding source"
-docker compose run --rm -T -e DECKARD_SEED=1 app_source \
+docker compose exec -T -e DECKARD_SEED=1 app_source \
   bin/rails db:drop db:create db:migrate db:seed
 
 echo "==> preparing destination (sequences restarted at 100000 to make remapping visible)"
-docker compose run --rm -T app_dest bin/rails db:drop db:create db:migrate
-docker compose run --rm -T app_dest bin/rails runner script/reset_dest_sequences.rb
+docker compose exec -T app_dest bin/rails db:drop db:create db:migrate
+docker compose exec -T app_dest bin/rails runner script/reset_dest_sequences.rb
 
 echo "==> streaming source -> destination"
-docker compose run --rm -T app_source bin/dump "Comment.all" \
-  | docker compose run --rm -T app_dest bin/load
+docker compose exec -T app_source bin/dump "Comment.all" \
+  | docker compose exec -T app_dest bin/load
 
 echo "==> verifying destination"
-docker compose run --rm -T app_dest bin/verify
+docker compose exec -T app_dest bin/verify
 
 echo "==> stream test passed"

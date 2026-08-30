@@ -24,6 +24,7 @@ services:
     build:
       context: ..
       dockerfile: harness/Dockerfile
+    command: sleep infinity
     environment:
       DATABASE_URL: postgres://postgres:deckard@db-source:5432/harness
       AR_ENCRYPTION_PRIMARY_KEY: source-primary-key
@@ -35,6 +36,7 @@ services:
 
   app_dest:
     image: deckard-harness
+    command: sleep infinity
     environment:
       DATABASE_URL: postgres://postgres:deckard@db-dest:5432/harness
       AR_ENCRYPTION_PRIMARY_KEY: dest-primary-key

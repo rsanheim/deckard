@@ -16,6 +16,9 @@ task :e2e do
   sh "harness/bin/stream_test"
 end
 
+desc "Run lint, host tests, and the end-to-end Docker harness"
+task "test-all" => %i[standard spec ratchet e2e]
+
 desc "Performance tests (slow; excluded from the default suite)"
 task :perf do
   sh({"DECKARD_PERF" => "1"}, "bundle exec rspec spec/perf")

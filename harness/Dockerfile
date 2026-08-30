@@ -6,7 +6,13 @@ RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends build-essential libpq-dev libyaml-dev git postgresql-client && \
     rm -rf /var/lib/apt/lists/*
 
-COPY . /deckard
-WORKDIR /deckard/harness
+# Keep dependency installation cached when only Deckard or harness source changes.
+COPY harness/Gemfile /deckard/harness/Gemfile
+COPY deckard.gemspec README.md /deckard/
+COPY exe/deckard /deckard/exe/deckard
+COPY lib/deckard/version.rb /deckard/lib/deckard/version.rb
 
+WORKDIR /deckard/harness
 RUN bundle install
+
+COPY . /deckard
