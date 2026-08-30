@@ -8,6 +8,11 @@ require "active_record"
 # touches nothing: call .setup from a spec hook.
 module DeckardTestDatabase
   URL = ENV.fetch("DECKARD_TEST_DATABASE_URL", "postgres://127.0.0.1:5433/deckard_gem_test")
+  DESTINATION_URL = ENV.fetch("DECKARD_TEST_DESTINATION_DATABASE_URL") do
+    uri = URI(URL)
+    uri.path = "#{uri.path}_destination"
+    uri.to_s
+  end
 
   TABLES = %w[comments payments profiles posts authors cycle_as cycle_bs
     reader_emails readers books libraries cargos ships employees artifacts
@@ -20,17 +25,32 @@ module DeckardTestDatabase
   # version raises instead of skipping.
   def self.setup
     return @setup_error if defined?(@setup_error)
-    @setup_error = connect_and_define_schema
+    @setup_error = connect_and_define_schema(URL)
+  end
+
+  def self.setup_destination
+    return @destination_setup_error if defined?(@destination_setup_error)
+
+    @destination_setup_error = connect_and_define_schema(DESTINATION_URL)
+  ensure
+    ActiveRecord::Base.establish_connection(URL)
+  end
+
+  def self.with_destination
+    ActiveRecord::Base.establish_connection(DESTINATION_URL)
+    yield
+  ensure
+    ActiveRecord::Base.establish_connection(URL)
   end
 
   def self.truncate
     ActiveRecord::Base.connection.execute("TRUNCATE #{TABLES.join(", ")} RESTART IDENTITY")
   end
 
-  def self.connect_and_define_schema
-    create_database
-    ActiveRecord::Base.establish_connection(URL)
-    check_server_version
+  def self.connect_and_define_schema(url)
+    create_database(url)
+    ActiveRecord::Base.establish_connection(url)
+    check_server_version(url)
     configure_encryption
     define_schema
     nil
@@ -39,8 +59,8 @@ module DeckardTestDatabase
   end
   private_class_method :connect_and_define_schema
 
-  def self.create_database
-    admin_uri = URI(URL)
+  def self.create_database(url)
+    admin_uri = URI(url)
     database = admin_uri.path.delete_prefix("/")
     admin_uri.path = "/postgres"
     admin = PG.connect(admin_uri.to_s)
@@ -51,11 +71,11 @@ module DeckardTestDatabase
   end
   private_class_method :create_database
 
-  def self.check_server_version
+  def self.check_server_version(url)
     version = ActiveRecord::Base.connection.select_value("SHOW server_version")
     unless version.start_with?("18.")
       raise "deckard specs must run against PostgreSQL 18 to match the e2e harness; " \
-        "#{URL} is running #{version}"
+        "#{url} is running #{version}"
     end
   end
   private_class_method :check_server_version
