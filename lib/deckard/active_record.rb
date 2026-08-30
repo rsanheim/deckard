@@ -15,6 +15,7 @@ module Deckard
     def dump_replicant(dumper, options = {})
       dumper.once(self.class.name, replicant_source_id) do
         omissions = replicant_omissions(options)
+        validate_selected_replicant_associations!(omissions, options)
         attributes = self.attributes.except(*self.class.deckard_generated_columns, *omissions.map(&:to_s))
         dump_belongs_to_replicants(dumper, attributes, omissions, options)
         dumper.write(self.class.name, replicant_source_id, attributes, self)
@@ -76,13 +77,44 @@ module Deckard
     # Associations named in the model's `replicate` block must exist; names
     # passed per-dump are skipped on classes that lack them, because options
     # cascade to every record reached in the traversal.
+    def validate_selected_replicant_associations!(omissions, options)
+      configured = self.class.deckard_model_config.extra_associations
+      configured.each do |name|
+        next if omissions.include?(name)
+
+        reflection = self.class.reflect_on_association(name)
+        unless reflection
+          raise DumpError, "#{self.class} names #{name.inspect} in its replicate block, but no such association exists"
+        end
+        validate_replicant_association!(reflection)
+      end
+
+      Array(options[:associations]).map(&:to_sym).each do |name|
+        next if omissions.include?(name) || configured.include?(name)
+
+        reflection = self.class.reflect_on_association(name)
+        validate_replicant_association!(reflection) if reflection
+      end
+    end
+
+    def validate_replicant_association!(reflection)
+      if reflection.macro == :has_and_belongs_to_many
+        raise UnsupportedAssociation,
+          "#{self.class}(#{replicant_source_id}).#{reflection.name} is a has_and_belongs_to_many association, " \
+          "which deckard does not support; use an explicit join model and replicate that association instead"
+      end
+
+      return unless reflection.macro == :has_many && reflection.through_reflection
+
+      raise UnsupportedAssociation,
+        "#{self.class}(#{replicant_source_id}).#{reflection.name} is a has_many :through association, " \
+        "which deckard does not support; replicate :#{reflection.through_reflection.name} instead"
+    end
+
     def dump_configured_replicants(dumper, omissions, options)
       configured = self.class.deckard_model_config.extra_associations
       configured.each do |name|
         next if omissions.include?(name)
-        unless self.class.reflect_on_association(name)
-          raise DumpError, "#{self.class} names #{name.inspect} in its replicate block, but no such association exists"
-        end
         dump_association(dumper, name, options)
       end
 

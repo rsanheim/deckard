@@ -14,7 +14,7 @@ module DeckardTestDatabase
     uri.to_s
   end
 
-  TABLES = %w[comments payments profiles posts authors cycle_as cycle_bs
+  TABLES = %w[bookmarks comments payments profiles posts authors cycle_as cycle_bs
     reader_emails readers books libraries cargos ships employees artifacts
     itineraries].freeze
 
@@ -105,6 +105,14 @@ module DeckardTestDatabase
       create_enum :artifact_mood, %w[calm ominous]
       create_table :authors, force: :cascade do |t|
         t.string :name, null: false
+        t.string :username
+        t.string :email
+        t.text :bio
+        t.string :location
+        t.string :website
+        t.boolean :verified, null: false, default: false
+        t.json :settings
+        t.datetime :joined_at
         t.timestamps
       end
 
@@ -119,12 +127,21 @@ module DeckardTestDatabase
         t.text :body
         t.string :description
         t.json :metadata
+        t.string :visibility, null: false, default: "public"
+        t.string :language
+        t.boolean :sensitive, null: false, default: false
+        t.datetime :published_at
       end
 
       create_table :comments, force: :cascade do |t|
         t.references :post, null: false
         t.references :author, null: false
         t.string :body
+      end
+
+      create_table :bookmarks, id: false, force: :cascade do |t|
+        t.references :author, null: false
+        t.references :post, null: false
       end
 
       create_table :payments, force: :cascade do |t|

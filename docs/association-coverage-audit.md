@@ -5,8 +5,9 @@
 tests; the gap claims were spot-checked with grep, and every behavioral question was then
 answered by running a throwaway script against the real gem test database (PostgreSQL 18,
 the same `Dumper`/`Loader`/`ActiveRecord` code the specs use). Each "Verified by running:"
-line reports what actually happened. The full default suite was green before and after
-(54 examples). No lib or spec code was changed.
+line reports what actually happened. The original audit was read-only with 54 green
+examples. Follow-up changes are recorded below; the current default suite has 57 green
+examples.
 
 Contract context (`docs/spec.md` sections 4 and 13): belongs_to and has_one traverse
 automatically; has_many only via explicit `associations` opt-in. Polymorphic belongs_to
@@ -59,24 +60,20 @@ the record dumps alone and loads cleanly. We also do not test dumping the same
 ActiveRecord collection twice in one script; the only dumped-twice test uses the
 plain-Ruby fixture objects (`spec/deckard/stream_spec.rb:122-133`).
 
-### has_and_belongs_to_many — No coverage; silently incomplete
+### has_and_belongs_to_many — Covered; fails clearly
 
-There are no HABTM models or tests anywhere in the repo. Verified by running: a `Club`
-with `associations :club_members` dumps the club and both members, the loader inserts
-copies of all three rows, and the join table gets nothing. The loaded club has zero
-members and no error is raised. HABTM is outside the v1.0 contract, but this violates
-the spec's own "fail clearly rather than approximate" rule — the data looks loaded and
-isn't connected.
+The social-app fixture models `Author#bookmarked_posts` as HABTM through the anonymous
+`bookmarks` table. Selecting it raises `UnsupportedAssociation` before any records are
+emitted and recommends replacing HABTM with an explicit join model
+(`spec/deckard/unsupported_associations_spec.rb:8-20`).
 
-### has_many :through — No coverage; the obvious usage is silently incomplete
+### has_many :through — Covered; fails clearly with guidance
 
-There are no `:through` models or tests. Verified by running: naming the through
-association itself (`associations :patients`) dumps the physician and the patients but
-never the appointment join rows — the loaded copies exist with no connection between
-them, silently. Naming the *join model* instead (`associations :appointments`) works
-completely: each appointment's two belongs_to pull in both sides, and the loaded
-physician sees its patients. So a correct pattern exists today; the natural-looking one
-is the trap.
+The fixture models `Author#commented_posts` through `Author#comments`. Selecting the
+far-side association raises `UnsupportedAssociation` before any records are emitted and
+specifically recommends replicating `:comments` instead
+(`unsupported_associations_spec.rb:22-35`). Dumping the join association remains the
+supported pattern: each comment's belongs_to associations pull in its author and post.
 
 ### has_one :through — No coverage; happened to work in the common shape
 
@@ -220,5 +217,5 @@ In-contract gaps — behavior verified correct, each needs a small regression te
 
 Verified warts needing a decision (behavior change, not just a test):
 
-- [ ] HABTM and far-side `has_many :through` silently load disconnected rows (verified above). Recommend raising `UnsupportedAssociation` for association macros other than belongs_to/has_one/has_many, and pointing at the working pattern — opt in the join model — in the error message and README
+- [x] HABTM and far-side `has_many :through` now raise `UnsupportedAssociation` before emitting records. The through-association error names the join association to replicate instead.
 - [ ] Omitting a populated polymorphic belongs_to leaves the `*_type` column behind, loading a dangling type next to a nil id. Recommend dropping the type column alongside the foreign key when the omitted association is polymorphic

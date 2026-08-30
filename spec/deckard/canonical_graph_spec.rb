@@ -10,14 +10,28 @@ RSpec.describe "canonical ActiveRecord graph", db: :multiple do
   end
 
   def create_source_author
-    author = Author.create!(name: "Jane Doe")
+    author = Author.create!(
+      name: "Jane Doe",
+      username: "jane",
+      email: "jane@example.test",
+      bio: "Writing about distributed systems and old movies.",
+      location: "Los Angeles, CA",
+      website: "https://jane.example.test",
+      verified: true,
+      settings: {"theme" => "dark", "email_notifications" => false},
+      joined_at: Time.utc(2024, 1, 15, 12)
+    )
     author.create_profile!(bio: "Writer and editor")
 
     first_post = author.posts.create!(
       title: "Draft previews fail to render",
       body: "The editor preview is blank when a post includes embedded images.",
       description: nil,
-      metadata: {"format" => "rich_text", "embedded_images" => 2}
+      metadata: {"format" => "rich_text", "embedded_images" => 2},
+      visibility: "followers",
+      language: "en",
+      sensitive: true,
+      published_at: Time.utc(2026, 8, 20, 15, 30)
     )
     first_post.comments.create!(author: author, body: "Only fails with embedded images")
     first_post.comments.create!(author: author, body: "Started after the last deploy")
@@ -26,7 +40,11 @@ RSpec.describe "canonical ActiveRecord graph", db: :multiple do
       title: "Welcome to my archive",
       body: "An introduction to the archive.",
       description: "Pinned introduction",
-      metadata: {"format" => "markdown", "featured" => true}
+      metadata: {"format" => "markdown", "featured" => true},
+      visibility: "public",
+      language: "en",
+      sensitive: false,
+      published_at: Time.utc(2024, 1, 16, 9)
     )
     second_post.comments.create!(author: author, body: "Pinned introduction")
 

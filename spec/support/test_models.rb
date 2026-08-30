@@ -8,6 +8,12 @@ require "active_record"
 class Author < ActiveRecord::Base
   has_one :profile
   has_many :posts
+  has_many :comments
+  has_many :commented_posts, through: :comments, source: :post
+  has_and_belongs_to_many :bookmarked_posts,
+    class_name: "Post",
+    join_table: "bookmarks",
+    association_foreign_key: "post_id"
 
   # These guards let the loader specs prove that callbacks and validations
   # are bypassed without making every Author fixture invalid.
@@ -26,6 +32,10 @@ end
 class Post < ActiveRecord::Base
   belongs_to :author
   has_many :comments
+  has_and_belongs_to_many :bookmarking_authors,
+    class_name: "Author",
+    join_table: "bookmarks",
+    association_foreign_key: "author_id"
 end
 
 class Comment < ActiveRecord::Base
