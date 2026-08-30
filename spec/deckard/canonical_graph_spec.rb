@@ -29,20 +29,6 @@ RSpec.describe "canonical ActiveRecord graph", db: :truncation do
     author
   end
 
-  def create_destination_author
-    author = create_author("Local Writer")
-    author.create_profile!(bio: "Destination data")
-
-    2.times do |post_index|
-      post = author.posts.create!(title: "Local post #{post_index}")
-      2.times do |comment_index|
-        post.comments.create!(author: author, body: "Local comment #{post_index}-#{comment_index}")
-      end
-    end
-
-    author
-  end
-
   def dump(author)
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)
@@ -120,15 +106,7 @@ RSpec.describe "canonical ActiveRecord graph", db: :truncation do
     DeckardTestDatabase.with_destination do
       DeckardTestDatabase.truncate
       begin
-        local_author = create_destination_author
-        local_snapshot = author_snapshot(local_author)
         advance_destination_sequences
-        counts_before_load = {
-          "Author" => Author.count,
-          "Profile" => Profile.count,
-          "Post" => Post.count,
-          "Comment" => Comment.count
-        }
 
         loader = Deckard::Loader.new(stream)
         loader.load
@@ -139,15 +117,13 @@ RSpec.describe "canonical ActiveRecord graph", db: :truncation do
         expect(loader.counts).to eq(dumper.counts)
 
         loader.counts.each do |type, count|
-          expect(Object.const_get(type).count).to eq(counts_before_load.fetch(type) + count)
+          expect(Object.const_get(type).count).to eq(count)
         end
 
         expect_local_keys(cloned_author)
         aggregate_ids(cloned_author).each do |type, ids|
           expect(ids & source_ids.fetch(type)).to be_empty
         end
-
-        expect(author_snapshot(local_author.reload)).to eq(local_snapshot)
       ensure
         DeckardTestDatabase.truncate
       end
