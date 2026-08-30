@@ -1,25 +1,19 @@
 # frozen_string_literal: true
 
 require "stringio"
-require_relative "../support/test_database"
+require_relative "../support/database_cleaner"
 require_relative "../support/test_models"
 
 # Performance tests for the ActiveRecord replicant path (real PostgreSQL).
 # Excluded from the default suite; run with
 # `DECKARD_PERF=1 bundle exec rspec spec/perf/active_record_perf_spec.rb`.
+# Truncation cleaning: a wrapping test transaction would distort the timing
+# and RSS numbers these examples measure.
 #
 # The loader inserts record-by-record via insert_all!/RETURNING plus a
 # find() per row (see docs/spec.md 10.1) - "record-by-record insertion is
 # acceptable for v1.0" - so load bounds here are deliberately loose.
-RSpec.describe "Deckard ActiveRecord performance", perf: true do
-  before do
-    if (error = DeckardTestDatabase.setup)
-      skip "PostgreSQL unavailable at #{DeckardTestDatabase::URL} (#{error}). " \
-        "Start a server there or set DECKARD_TEST_DATABASE_URL."
-    end
-    DeckardTestDatabase.truncate
-  end
-
+RSpec.describe "Deckard ActiveRecord performance", perf: true, db: :truncation do
   def create_author(name)
     author = Author.new(name: name)
     author.save!(validate: false)
