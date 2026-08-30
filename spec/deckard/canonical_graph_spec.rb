@@ -92,9 +92,7 @@ RSpec.describe "canonical ActiveRecord graph", db: :truncation do
   end
 
   it "clones an author's complete support dataset into another database" do
-    if (error = DeckardTestDatabase.setup_destination)
-      skip "destination PostgreSQL unavailable at #{DeckardTestDatabase::DESTINATION_URL} (#{error})"
-    end
+    DeckardTestDatabase.setup_destination
 
     source_author = create_source_author
     source_snapshot = author_snapshot(source_author)

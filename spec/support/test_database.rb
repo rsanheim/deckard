@@ -26,12 +26,15 @@ module DeckardTestDatabase
   def self.setup
     return @setup_error if defined?(@setup_error)
     @setup_error = connect_and_define_schema(URL)
+  rescue PG::Error, ActiveRecord::ConnectionNotEstablished => e
+    @setup_error = "#{e.class}: #{e.message.strip.lines.first}"
   end
 
   def self.setup_destination
-    return @destination_setup_error if defined?(@destination_setup_error)
+    return if @destination_setup
 
-    @destination_setup_error = connect_and_define_schema(DESTINATION_URL)
+    connect_and_define_schema(DESTINATION_URL)
+    @destination_setup = true
   ensure
     ActiveRecord::Base.establish_connection(URL)
   end
@@ -54,8 +57,6 @@ module DeckardTestDatabase
     configure_encryption
     define_schema
     nil
-  rescue PG::Error, ActiveRecord::ConnectionNotEstablished => e
-    "#{e.class}: #{e.message.strip.lines.first}"
   end
   private_class_method :connect_and_define_schema
 
