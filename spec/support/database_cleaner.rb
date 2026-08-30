@@ -9,15 +9,12 @@ require_relative "test_database"
 # assertions, subprocesses, perf measurements).
 RSpec.configure do |config|
   config.before(:each, :db) do |example|
-    if (error = DeckardTestDatabase.setup)
-      skip "PostgreSQL unavailable at #{DeckardTestDatabase::URL} (#{error}). " \
-        "Start a server there or set DECKARD_TEST_DATABASE_URL."
-    end
+    DeckardTestDatabase.setup
     DatabaseCleaner.strategy = (example.metadata[:db] == :truncation) ? :truncation : :transaction
     DatabaseCleaner.start
   end
 
   config.after(:each, :db) do
-    DatabaseCleaner.clean unless DeckardTestDatabase.setup
+    DatabaseCleaner.clean
   end
 end

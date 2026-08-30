@@ -20,14 +20,12 @@ module DeckardTestDatabase
 
   # Connect, create the test database if missing, verify the server runs
   # PostgreSQL 18 (matching the e2e harness), and define the schema.
-  # Memoized across calls; returns nil when ready, or an error description
-  # when no server is reachable. A reachable server on the wrong major
-  # version raises instead of skipping.
+  # Memoized across calls; connection and setup failures propagate.
   def self.setup
-    return @setup_error if defined?(@setup_error)
-    @setup_error = connect_and_define_schema(URL)
-  rescue PG::Error, ActiveRecord::ConnectionNotEstablished => e
-    @setup_error = "#{e.class}: #{e.message.strip.lines.first}"
+    return if @setup
+
+    connect_and_define_schema(URL)
+    @setup = true
   end
 
   def self.setup_destination
