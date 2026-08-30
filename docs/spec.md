@@ -35,6 +35,8 @@ Deckard does not introduce a server, direct database-to-database connection, con
 
 ## 2. Design principle
 
+Deckard favors sensible defaults with simple, explicit configuration.
+
 The original `replicate` README is the API baseline.
 
 An original example should generally translate to Deckard by making only these changes:
@@ -46,7 +48,7 @@ An original example should generally translate to Deckard by making only these c
 | `replicate ...` executable | `deckard ...` executable |
 | `replicate_associations` | `replicate { associations ... }` |
 | `replicate_natural_key` | `replicate { natural_key ... }` |
-| `replicate_omit_attributes` | `replicate { omit ... }` |
+| `replicate_omit_attributes` | `replicate { omit_fields ... }` |
 
 Everything else should remain conceptually and syntactically close to the original.
 
@@ -319,12 +321,13 @@ replicate do
 end
 ```
 
-The block provides three methods in v1.0:
+The block provides four methods in v1.0:
 
 ```ruby
 associations
 natural_key
-omit
+omit_fields
+omit_associations
 ```
 
 There is no `Deckard.configure` block and no separate model concern that applications must include.
@@ -470,59 +473,88 @@ Dependent records are then rewritten to reference destination user `8`.
 
 Natural keys are explicit. Deckard does not inspect all unique indexes and guess which ones should identify shared records.
 
-### 7.4 Omitting attributes and associations
+### 7.4 Omitting fields
 
-Attributes or associations may be excluded from the stream:
+Fields may be excluded from a model's dumped attributes:
 
 ```ruby
 class User < ActiveRecord::Base
   has_one :profile
 
   replicate do
-    omit :created_at, :profile
+    omit_fields :created_at, :encrypted_password
   end
 end
 ```
 
-Here:
-
-- `created_at` is removed from the dumped attributes.
-- `profile` is not traversed or dumped.
-
-A `belongs_to` relationship may also be omitted using either its association name or foreign-key attribute:
+Only explicitly named fields are removed. `omit_fields` does not change association
+traversal. In particular, omitting a foreign-key field does not implicitly omit its
+association:
 
 ```ruby
 replicate do
-  omit :organization
+  omit_fields :organization_id
 end
 ```
 
-or:
+Deckard still traverses `organization`, but `organization_id` is not included in the
+dumped row. If an explicitly omitted field causes a destination constraint violation,
+the load fails normally.
+
+### 7.5 Omitting associations
+
+Associations may be excluded from graph traversal independently of dumped fields:
 
 ```ruby
 replicate do
-  omit :organization_id
+  omit_associations :organization
 end
 ```
 
-If omitting a foreign key causes the destination record to violate a non-null or foreign-key constraint, the load fails normally.
+Deckard does not traverse or dump the organization through this association. The source
+row's attributes remain unchanged: `organization_id` is still dumped as its raw source
+value because the organization was not traversed and no destination ID is available for
+remapping.
 
-### 7.5 Per-dump omissions
-
-A dump script may omit values for a particular call:
+This rule also applies to polymorphic associations. Given:
 
 ```ruby
-dump User.all, omit: [:profile]
+class Setting < ActiveRecord::Base
+  belongs_to :scope, polymorphic: true
+
+  replicate do
+    omit_associations :scope
+  end
+end
 ```
 
-Per-dump omissions are combined with the model’s configured omissions.
+Deckard copies both `scope_id` and `scope_type` exactly as stored but does not traverse
+`scope`. The application has explicitly taken responsibility for that relationship. If
+the raw foreign key violates a destination constraint, the load fails normally; Deckard
+does not silently remove or rewrite fields.
 
-### 7.6 Configuration inheritance
+### 7.6 Per-dump omissions
+
+A dump script may apply the same ActiveRecord-specific configuration for a particular
+call:
+
+```ruby
+dump User.all,
+  omit_fields: [:created_at],
+  omit_associations: [:profile]
+```
+
+Per-dump field and association omissions are combined with the corresponding model
+configuration. These keys are interpreted by ActiveRecord's `dump_replicant`
+implementation. The generic `dump(object, options = {})` API remains unchanged and
+passes its options through to each replicant implementation.
+
+### 7.7 Configuration inheritance
 
 Deckard model configuration follows ActiveRecord inheritance:
 
 - A subclass begins with its superclass’s configuration.
-- Additional associations and omissions are additive.
+- Additional associations, field omissions, and association omissions are additive.
 - A subclass may define its own natural key.
 - Mutating a subclass’s configuration must not mutate the superclass’s configuration.
 
@@ -1041,7 +1073,7 @@ Responsibilities:
 
 - Store associations.
 - Store the optional natural key.
-- Store omissions.
+- Store field omissions and association omissions separately.
 - Implement inheritance without shared mutable arrays.
 - Back the `replicate do ... end` model DSL.
 
@@ -1153,15 +1185,18 @@ end
 
 reuses and updates an existing destination record and maps dependent records to its destination ID.
 
-### 18.10 Omission
+### 18.10 Field and association omission
 
 ```ruby
 replicate do
-  omit :created_at, :profile
+  omit_fields :created_at
+  omit_associations :profile
 end
 ```
 
-omits the attribute and does not traverse the association.
+omits the explicitly named field and does not traverse the explicitly named association.
+Each decision is independent: association omission never removes fields, and field
+omission never changes graph traversal.
 
 ### 18.11 Callback bypass
 
@@ -1252,7 +1287,8 @@ Implement:
 replicate do
   associations
   natural_key
-  omit
+  omit_fields
+  omit_associations
 end
 ```
 
@@ -1260,7 +1296,7 @@ Then implement:
 
 - Selected `has_many`.
 - Per-dump `associations:`.
-- Per-dump `omit:`.
+- Per-dump `omit_fields:` and `omit_associations:`.
 - Configuration inheritance.
 - Natural-key updates.
 
@@ -1335,7 +1371,7 @@ Deckard v1.0 will:
 - Use `deckard` as the gem and executable name.
 - Use `Deckard` as the Ruby namespace.
 - Use `replicate do ... end` for namespaced model configuration.
-- Expose only `associations`, `natural_key`, and `omit` inside that block.
+- Expose only `associations`, `natural_key`, `omit_fields`, and `omit_associations` inside that block.
 - Retain dump expressions and ordinary Ruby dump scripts.
 - Retain `dump_replicant` and `load_replicant`.
 - Stream directly over standard input and output.
