@@ -14,13 +14,14 @@ module Deckard
 
     def dump_replicant(dumper, options = {})
       dumper.once(self.class.name, replicant_source_id) do
-        omissions = replicant_omissions(options)
-        validate_selected_replicant_associations!(omissions, options)
-        attributes = self.attributes.except(*self.class.deckard_generated_columns, *omissions.map(&:to_s))
-        dump_belongs_to_replicants(dumper, attributes, omissions, options)
+        omitted_fields = replicant_omitted_fields(options)
+        omitted_associations = replicant_omitted_associations(options)
+        validate_selected_replicant_associations!(omitted_associations, options)
+        attributes = self.attributes.except(*self.class.deckard_generated_columns, *omitted_fields.map(&:to_s))
+        dump_belongs_to_replicants(dumper, attributes, omitted_fields, omitted_associations, options)
         dumper.write(self.class.name, replicant_source_id, attributes, self)
-        dump_has_one_replicants(dumper, omissions, options)
-        dump_configured_replicants(dumper, omissions, options)
+        dump_has_one_replicants(dumper, omitted_associations, options)
+        dump_configured_replicants(dumper, omitted_associations, options)
       end
     end
 
@@ -33,24 +34,18 @@ module Deckard
       id
     end
 
-    # Model-configured omissions plus per-dump omit: names.
-    def replicant_omissions(options)
-      self.class.deckard_model_config.omissions + Array(options[:omit]).map(&:to_sym)
+    def replicant_omitted_fields(options)
+      self.class.deckard_model_config.omitted_fields + Array(options[:omit_fields]).map(&:to_sym)
     end
 
-    def dump_belongs_to_replicants(dumper, attributes, omissions, options)
+    def replicant_omitted_associations(options)
+      self.class.deckard_model_config.omitted_associations + Array(options[:omit_associations]).map(&:to_sym)
+    end
+
+    def dump_belongs_to_replicants(dumper, attributes, omitted_fields, omitted_associations, options)
       self.class.reflect_on_all_associations(:belongs_to).each do |reflection|
         foreign_key = reflection.foreign_key.to_s
-        if omissions.include?(reflection.name) || omissions.include?(foreign_key.to_sym)
-          attributes.delete(foreign_key)
-          next
-        end
-
-        if reflection.polymorphic?
-          next if public_send(reflection.name).nil?
-          raise UnsupportedAssociation,
-            "#{self.class}(#{replicant_source_id}).#{reflection.name} is a polymorphic belongs_to association"
-        end
+        next if omitted_associations.include?(reflection.name)
 
         referenced = public_send(reflection.name)
         next if referenced.nil?
@@ -62,13 +57,15 @@ module Deckard
             "dependency cycle detected: #{self.class}(#{replicant_source_id}).#{reflection.name} " \
             "references #{referenced.class.name}(#{referenced_id}), which cannot be emitted first"
         end
-        attributes[foreign_key] = [:id, referenced.class.name, referenced_id]
+        unless omitted_fields.include?(foreign_key.to_sym)
+          attributes[foreign_key] = [:id, referenced.class.name, referenced_id]
+        end
       end
     end
 
-    def dump_has_one_replicants(dumper, omissions, options)
+    def dump_has_one_replicants(dumper, omitted_associations, options)
       self.class.reflect_on_all_associations(:has_one).each do |reflection|
-        next if omissions.include?(reflection.name)
+        next if omitted_associations.include?(reflection.name)
         dependent = public_send(reflection.name)
         dumper.dump(dependent, options) if dependent
       end
@@ -77,10 +74,10 @@ module Deckard
     # Associations named in the model's `replicate` block must exist; names
     # passed per-dump are skipped on classes that lack them, because options
     # cascade to every record reached in the traversal.
-    def validate_selected_replicant_associations!(omissions, options)
+    def validate_selected_replicant_associations!(omitted_associations, options)
       configured = self.class.deckard_model_config.extra_associations
       configured.each do |name|
-        next if omissions.include?(name)
+        next if omitted_associations.include?(name)
 
         reflection = self.class.reflect_on_association(name)
         unless reflection
@@ -90,7 +87,7 @@ module Deckard
       end
 
       Array(options[:associations]).map(&:to_sym).each do |name|
-        next if omissions.include?(name) || configured.include?(name)
+        next if omitted_associations.include?(name) || configured.include?(name)
 
         reflection = self.class.reflect_on_association(name)
         validate_replicant_association!(reflection) if reflection
@@ -111,15 +108,15 @@ module Deckard
         "which deckard does not support; replicate :#{reflection.through_reflection.name} instead"
     end
 
-    def dump_configured_replicants(dumper, omissions, options)
+    def dump_configured_replicants(dumper, omitted_associations, options)
       configured = self.class.deckard_model_config.extra_associations
       configured.each do |name|
-        next if omissions.include?(name)
+        next if omitted_associations.include?(name)
         dump_association(dumper, name, options)
       end
 
       Array(options[:associations]).map(&:to_sym).each do |name|
-        next if omissions.include?(name) || configured.include?(name)
+        next if omitted_associations.include?(name) || configured.include?(name)
         next unless self.class.reflect_on_association(name)
         dump_association(dumper, name, options)
       end

@@ -1,15 +1,17 @@
 # frozen_string_literal: true
 
 RSpec.describe Deckard::ModelConfig do
-  it "accumulates associations and omissions additively across calls" do
+  it "accumulates associations and both omission types additively across calls" do
     config = Deckard::ModelConfig.new
     config.associations :emails
     config.associations :memberships, :teams
-    config.omit :created_at
-    config.omit :profile
+    config.omit_fields :created_at
+    config.omit_fields :encrypted_password
+    config.omit_associations :profile
 
     expect(config.extra_associations).to eq(%i[emails memberships teams])
-    expect(config.omissions).to eq(%i[created_at profile])
+    expect(config.omitted_fields).to eq(%i[created_at encrypted_password])
+    expect(config.omitted_associations).to eq([:profile])
   end
 
   it "replaces the natural key when defined again" do
@@ -28,12 +30,14 @@ RSpec.describe Deckard::ModelConfig do
     child = Deckard::ModelConfig.new(parent)
     child.associations :posts
     child.natural_key :slug
-    child.omit :secret
+    child.omit_fields :secret
+    child.omit_associations :profile
 
     expect(child.extra_associations).to eq(%i[emails posts])
     expect(child.natural_key_attributes).to eq([:slug])
     expect(parent.extra_associations).to eq([:emails])
     expect(parent.natural_key_attributes).to eq([:login])
-    expect(parent.omissions).to eq([])
+    expect(parent.omitted_fields).to eq([])
+    expect(parent.omitted_associations).to eq([])
   end
 end

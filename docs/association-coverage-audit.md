@@ -6,15 +6,14 @@ tests; the gap claims were spot-checked with grep, and every behavioral question
 answered by running a throwaway script against the real gem test database (PostgreSQL 18,
 the same `Dumper`/`Loader`/`ActiveRecord` code the specs use). Each "Verified by running:"
 line reports what actually happened. The original audit was read-only with 54 green
-examples. Follow-up changes are recorded below; the current default suite has 57 green
+examples. Follow-up changes are recorded below; the current default suite has 60 green
 examples.
 
 Contract context (`docs/spec.md` sections 4 and 13): belongs_to and has_one traverse
-automatically; has_many only via explicit `associations` opt-in. Polymorphic belongs_to
-must raise `Deckard::UnsupportedAssociation`. Explicitly *not* part of the v1.0 contract
-(may work accidentally, no promised behavior): HABTM join-table replication,
-`has_many :through`, `has_one :through`, polymorphic associations, complicated STI
-dispatch, deferrable dependency cycles.
+automatically; has_many only via explicit `associations` opt-in. Explicitly *not* part of
+the v1.0 contract (may work accidentally, no promised behavior): HABTM join-table
+replication, `has_many :through`, `has_one :through`, complicated STI dispatch,
+deferrable dependency cycles.
 
 ## Association types
 
@@ -23,9 +22,10 @@ dispatch, deferrable dependency cycles.
 We test that dumping a record pulls in its belongs_to parent, that the parent gets a new
 destination id, and that the child's foreign key points at that new id
 (`spec/deckard/active_record_spec.rb:27-44`). We test that a nil foreign key stays nil
-(`active_record_spec.rb:70-78`), and that omitting a belongs_to — by association name or
-by foreign-key column — skips the parent and drops the key from the stream
-(`spec/deckard/model_api_spec.rb:94-108`). Both optional (`Book`) and required
+(`active_record_spec.rb:70-78`). Association omission and field omission are independent:
+omitting a belongs_to association skips traversal but preserves its raw foreign key,
+while omitting the foreign-key field still traverses the association
+(`spec/deckard/model_api_spec.rb:92-116`). Both optional (`Book`) and required
 (`Profile`) associations appear in the fixtures.
 
 We do not have a test for a *required* belongs_to whose foreign key is nil in the source
@@ -83,23 +83,19 @@ Verified by running: `Supplier -> Account -> AccountHistory` with
 whose intermediate association is not an automatic belongs_to/has_one would lose the
 linkage the same way has_many :through does.
 
-### Polymorphic belongs_to — Covered, with one wart
+### Polymorphic belongs_to — Covered
 
-We test that a populated polymorphic belongs_to raises `UnsupportedAssociation` with a
-clear message (`active_record_spec.rb:114-122`) and that a nil one is left alone
-(`active_record_spec.rb:70-78`).
+A populated polymorphic belongs_to dumps its concrete target and remaps its foreign key
+while preserving the polymorphic type. A nil target remains nil. Omitting the association
+with `omit_associations` skips traversal while preserving both raw foreign-key fields,
+as required by the explicit field-versus-association omission contract
+(`active_record_spec.rb:113-155`).
 
-We do not test omitting a *populated* polymorphic belongs_to. Verified by running: the
-omission wins over the raise and `billable_id` is dropped — but the `billable_type`
-column still streams and loads, so the destination row ends up with a type string
-("Author") next to a nil id. The omission should probably drop the type column too.
+### Polymorphic has_many (reverse side) — Covered
 
-### Polymorphic has_many / has_one (reverse side) — No coverage; fails clearly
-
-No test model has the reverse side (`has_many :payments, as: :billable`). Verified by
-running: opting one in traverses into the child, whose populated polymorphic belongs_to
-then raises `UnsupportedAssociation`. So this path cannot silently corrupt anything — it
-fails loudly — but no test documents that.
+`Author#payments` models the reverse polymorphic has_many. Explicitly selecting it
+round-trips the payment and points it back at the new destination author
+(`active_record_spec.rb:128-140`).
 
 ### Self-referential — Covered for chains, not for self-loops
 
@@ -213,9 +209,9 @@ In-contract gaps — behavior verified correct, each needs a small regression te
 - [ ] Classic two-arm diamond, named as such, asserting single emission of the shared grandchild
 - [ ] Same ActiveRecord collection dumped twice in one script emits rows once
 - [ ] Self-loop row: pin the verified `DumpError` behavior with a test (or decide to support it and change code)
-- [ ] Polymorphic has_many reverse side: one test documenting the verified `UnsupportedAssociation` raise
+- [x] Polymorphic has_many reverse side round-trips through the supported polymorphic belongs_to path
 
 Verified warts needing a decision (behavior change, not just a test):
 
 - [x] HABTM and far-side `has_many :through` now raise `UnsupportedAssociation` before emitting records. The through-association error names the join association to replicate instead.
-- [ ] Omitting a populated polymorphic belongs_to leaves the `*_type` column behind, loading a dangling type next to a nil id. Recommend dropping the type column alongside the foreign key when the omitted association is polymorphic
+- [x] `omit_associations` now preserves both polymorphic foreign-key fields while skipping traversal; fields are omitted only through `omit_fields`

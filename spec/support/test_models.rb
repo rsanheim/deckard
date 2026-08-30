@@ -9,6 +9,7 @@ class Author < ActiveRecord::Base
   has_one :profile
   has_many :posts
   has_many :comments
+  has_many :payments, as: :billable
   has_many :commented_posts, through: :comments, source: :post
   has_and_belongs_to_many :bookmarked_posts,
     class_name: "Post",
@@ -83,7 +84,7 @@ class Library < ActiveRecord::Base
 
   replicate do
     associations :books
-    omit :secret
+    omit_fields :secret
   end
 end
 

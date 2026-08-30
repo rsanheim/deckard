@@ -82,7 +82,7 @@ RSpec.describe "ActiveRecord edge cases", :db do
     library = SpecialLibrary.create!(name: "Tyrell private stacks")
     book = Book.create!(library: library, title: "Owl schematics")
 
-    io, _ = stream(book, omit: [:books])
+    io, _ = stream(book, omit_associations: [:books])
 
     frames = frames(io)
     expect(frames.map(&:first)).to eq(%w[SpecialLibrary Book])

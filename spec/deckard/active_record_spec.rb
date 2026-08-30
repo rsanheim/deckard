@@ -13,10 +13,10 @@ RSpec.describe Deckard::ActiveRecord, :db do
     Author.create!(name: name)
   end
 
-  def stream(objects)
+  def stream(objects, options = {})
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)
-    Array(objects).each { |object| dumper.dump(object) }
+    Array(objects).each { |object| dumper.dump(object, options) }
     dumper.complete
     io.rewind
     [io, dumper]
@@ -110,14 +110,48 @@ RSpec.describe Deckard::ActiveRecord, :db do
     expect(Author.count).to eq(0)
   end
 
-  it "raises UnsupportedAssociation for a populated polymorphic belongs_to" do
+  it "round trips a populated polymorphic belongs_to" do
     author = create_author("Rachael")
     payment = Payment.create!(billable: author, amount: 10)
 
-    expect { stream(payment) }.to raise_error(
-      Deckard::UnsupportedAssociation,
-      "Payment(#{payment.id}).billable is a polymorphic belongs_to association"
-    )
+    io, dumper = stream(payment)
+    expect(dumper.counts).to eq("Author" => 1, "Payment" => 1)
+
+    Deckard::Loader.new(io).load
+
+    new_author = Author.where.not(id: author.id).sole
+    new_payment = Payment.where.not(id: payment.id).sole
+    expect(new_payment.billable_type).to eq("Author")
+    expect(new_payment.billable_id).to eq(new_author.id)
+  end
+
+  it "round trips an explicitly selected reverse polymorphic has_many" do
+    author = create_author("Rachael")
+    payment = Payment.create!(billable: author, amount: 10)
+
+    io, dumper = stream(author, associations: [:payments])
+    expect(dumper.counts).to eq("Author" => 1, "Payment" => 1)
+
+    Deckard::Loader.new(io).load
+
+    new_author = Author.where.not(id: author.id).sole
+    new_payment = Payment.where.not(id: payment.id).sole
+    expect(new_author.payments).to contain_exactly(new_payment)
+  end
+
+  it "omits polymorphic traversal without changing the foreign-key fields" do
+    author = create_author("Rachael")
+    payment = Payment.create!(billable: author, amount: 10)
+
+    io, dumper = stream(payment, omit_associations: [:billable])
+    expect(dumper.counts).to eq("Payment" => 1)
+
+    Deckard::Loader.new(io).load
+
+    new_payment = Payment.where.not(id: payment.id).sole
+    expect(new_payment.amount).to eq(10)
+    expect(new_payment.billable_type).to eq("Author")
+    expect(new_payment.billable_id).to eq(author.id)
   end
 
   it "raises DumpError on a belongs_to dependency cycle" do

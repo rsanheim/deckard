@@ -132,7 +132,7 @@ The original README’s small configuration surface remains available:
 
 - Additional associations.
 - Natural keys.
-- Omitted attributes and associations.
+- Explicit field omissions and association omissions.
 - Per-`dump` association and omission options.
 - `dump_replicant` and `load_replicant` hooks.
 
@@ -930,15 +930,16 @@ Deckard v1.0 targets ordinary Rails models with:
 - One conventional primary-key column.
 - Integer, bigint, or database-generated UUID primary keys.
 - Conventional `belongs_to`.
+- Conventional polymorphic `belongs_to`.
 - Conventional `has_one`.
 - Explicitly selected conventional `has_many`.
+- Explicitly selected reverse polymorphic `has_one` and `has_many`.
 - Normal `class_name` and `foreign_key` association options.
 - Attributes serializable by Ruby `Marshal` and writable through ActiveRecord.
 
 The following are explicitly not required for v1.0:
 
 - Composite primary keys.
-- Polymorphic associations.
 - HABTM join-table replication.
 - `has_many :through`.
 - `has_one :through`.
@@ -974,7 +975,7 @@ Errors should include enough context to identify the problem:
 
 ```text
 Deckard::UnsupportedAssociation:
-Payment(812).billable is a polymorphic belongs_to association
+Author(812).bookmarked_posts is a has_and_belongs_to_many association, which deckard does not support
 ```
 
 ```text
@@ -1230,7 +1231,7 @@ A malformed stream, truncated stream, unresolved reference, or PostgreSQL insert
 
 ### 18.16 Clear unsupported-case errors
 
-Polymorphic associations, composite primary keys, and unsupported dependency cycles produce specific errors rather than corrupted data.
+HABTM associations, through associations, composite primary keys, and unsupported dependency cycles produce specific errors rather than corrupted data.
 
 ## 19. Implementation order
 
@@ -1346,7 +1347,6 @@ Possible work after v1.0 includes:
 - Anonymization.
 - HABTM.
 - Through associations.
-- Polymorphic associations.
 - Composite primary keys.
 - Association limits.
 - Attribute transformations.
