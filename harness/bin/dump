@@ -3,4 +3,11 @@
 #
 #   bin/dump "Comment.all" > stream.dump
 set -euo pipefail
-exec bundle exec deckard -r ./config/environment -d "$1"
+
+if [[ "${DECKARD_HARNESS_BOOT_LOG:-}" == "1" ]]; then
+  echo "application booted"
+fi
+
+target="$1"
+shift
+exec bundle exec deckard -r ./config/environment -d "$target" "$@"

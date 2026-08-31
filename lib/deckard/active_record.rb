@@ -4,9 +4,10 @@ module Deckard
   # Implements the replicant protocol for ActiveRecord models. Included into
   # ActiveRecord::Base when ActiveRecord loads (see lib/deckard.rb).
   #
-  # Traversal order: belongs_to associations, the record itself, has_one
-  # associations, then associations configured via `replicate` or per-dump
-  # options. has_many associations are never followed automatically.
+  # Traversal order: belongs_to associations, configured scalar references,
+  # the record itself, has_one associations, then associations configured via
+  # `replicate` or per-dump options. has_many associations are never followed
+  # automatically.
   module ActiveRecord
     def self.included(base)
       base.extend ClassMethods
@@ -19,6 +20,7 @@ module Deckard
         validate_selected_replicant_associations!(omitted_associations, options)
         attributes = self.attributes.except(*self.class.deckard_generated_columns, *omitted_fields.map(&:to_s))
         dump_belongs_to_replicants(dumper, attributes, omitted_fields, omitted_associations, options)
+        dump_scalar_reference_replicants(dumper, attributes, omitted_fields, options)
         dumper.write(self.class.name, replicant_source_id, attributes, self)
         dump_has_one_replicants(dumper, omitted_associations, options)
         dump_configured_replicants(dumper, omitted_associations, options)
@@ -50,17 +52,71 @@ module Deckard
         referenced = public_send(reflection.name)
         next if referenced.nil?
 
-        dumper.dump(referenced, options)
-        referenced_id = referenced.send(:replicant_source_id)
-        unless dumper.dumped?(referenced.class.name, referenced_id)
-          raise DumpError,
-            "dependency cycle detected: #{self.class}(#{replicant_source_id}).#{reflection.name} " \
-            "references #{referenced.class.name}(#{referenced_id}), which cannot be emitted first"
-        end
-        unless omitted_fields.include?(foreign_key.to_sym)
-          attributes[foreign_key] = [:id, referenced.class.name, referenced_id]
+        if omitted_fields.include?(foreign_key.to_sym)
+          dump_reference_replicant(dumper, referenced, reflection.name, options)
+        else
+          attributes[foreign_key] = dump_reference_replicant(dumper, referenced, reflection.name, options)
         end
       end
+    end
+
+    def dump_scalar_reference_replicants(dumper, attributes, omitted_fields, options)
+      self.class.deckard_model_config.scalar_references.each do |attribute, definition|
+        next if omitted_fields.include?(attribute)
+        unless has_attribute?(attribute)
+          raise DumpError, "#{self.class} configures scalar_reference #{attribute.inspect}, but no such attribute exists"
+        end
+
+        source_id = self[attribute]
+        next if source_id.nil?
+
+        referenced = resolve_scalar_reference(attribute, source_id, definition)
+        unless referenced
+          raise DumpError,
+            "#{self.class}(#{replicant_source_id}).#{attribute} scalar reference did not resolve to a record"
+        end
+        attributes[attribute.to_s] = dump_reference_replicant(dumper, referenced, attribute, options)
+      end
+    end
+
+    def resolve_scalar_reference(attribute, source_id, definition)
+      if definition.resolver
+        definition.resolver.call(self, source_id)
+      else
+        target = definition.target.is_a?(String) ? definition.target.constantize : definition.target
+        unless target.respond_to?(:primary_key) && target.respond_to?(:find_by)
+          raise DumpError,
+            "#{self.class}(#{replicant_source_id}).#{attribute} scalar reference target must be an ActiveRecord model"
+        end
+        if target.primary_key.is_a?(Array)
+          raise DumpError,
+            "#{self.class}(#{replicant_source_id}).#{attribute} scalar reference target has a composite primary key"
+        end
+        target.find_by(target.primary_key => source_id)
+      end
+    rescue Deckard::Error
+      raise
+    rescue => e
+      raise DumpError,
+        "#{self.class}(#{replicant_source_id}).#{attribute} scalar reference resolution failed: " \
+        "#{e.class}: #{Deckard.error_detail(e)}",
+        cause: e
+    end
+
+    def dump_reference_replicant(dumper, referenced, reference_name, options)
+      dumper.dump(referenced, options)
+      unless referenced.respond_to?(:replicant_source_id, true)
+        raise DumpError,
+          "#{self.class}(#{replicant_source_id}).#{reference_name} resolved to an object without an ActiveRecord replicant identity"
+      end
+
+      referenced_id = referenced.send(:replicant_source_id)
+      unless dumper.dumped?(referenced.class.name, referenced_id)
+        raise DumpError,
+          "dependency cycle detected: #{self.class}(#{replicant_source_id}).#{reference_name} " \
+          "references #{referenced.class.name}(#{referenced_id}), which cannot be emitted first"
+      end
+      [:id, referenced.class.name, referenced_id]
     end
 
     def dump_has_one_replicants(dumper, omitted_associations, options)
@@ -171,7 +227,7 @@ module Deckard
         [destination_id, find(destination_id)]
       rescue ::ActiveRecord::ActiveRecordError => e
         raise InsertError,
-          "#{type} source_id=#{source_id} could not be inserted: #{e.message.lines.first.strip}"
+          "#{type} source_id=#{source_id} could not be inserted: #{Deckard.error_detail(e)}"
       end
 
       def load_replicant_by_natural_key(type, source_id, attributes, key)
@@ -187,7 +243,7 @@ module Deckard
             record.update_columns(attributes.except(primary_key))
           rescue ::ActiveRecord::ActiveRecordError => e
             raise InsertError,
-              "#{type} source_id=#{source_id} could not be updated via natural key: #{e.message.lines.first.strip}"
+              "#{type} source_id=#{source_id} could not be updated via natural key: #{Deckard.error_detail(e)}"
           end
           [record.id, record]
         else

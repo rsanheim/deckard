@@ -2,6 +2,8 @@
 
 require "json"
 
+puts "application booted" if ENV["DECKARD_BOOT_LOG"] == "1"
+
 # Plain-Ruby replicant classes for the CLI subprocess specs. Loading appends
 # JSON lines to the file named by DECKARD_CLI_OUT, so the parent spec
 # process can observe what a separate load process did.

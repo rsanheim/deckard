@@ -176,6 +176,8 @@ module DeckardTestDatabase
 
       create_table :books, force: :cascade do |t|
         t.references :library
+        t.bigint :related_book_id
+        t.bigint :resolved_book_id
         t.string :title, null: false
       end
 

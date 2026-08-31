@@ -26,7 +26,7 @@ Deckard is a direct resurrection of the original `replicate` gem’s operating m
 1. Boot the source Rails application.
 2. Evaluate a Ruby expression or dump script.
 3. Traverse the selected objects and associations.
-4. Stream each object to standard output as it is discovered.
+4. Stream each object to the selected binary output channel as it is discovered.
 5. Pipe that stream to Deckard in the destination Rails application.
 6. Insert each object with a new local primary key.
 7. Rewrite foreign keys using a source-to-destination ID map.
@@ -134,6 +134,7 @@ The original README’s small configuration surface remains available:
 - Natural keys.
 - Explicit field omissions and association omissions.
 - Per-`dump` association and omission options.
+- Scalar-reference remapping for logical foreign keys without associations.
 - `dump_replicant` and `load_replicant` hooks.
 
 These features should remain small and direct rather than becoming a generalized plugin or policy framework.
@@ -285,7 +286,36 @@ Repository       20
 User             89
 ```
 
-### 6.5 Direct SSH streaming
+### 6.5 Safe dump output channels
+
+By default, Deckard writes its binary stream to standard output and its own
+diagnostics to standard error. Requiring an application runs arbitrary boot
+code, however, and Deckard cannot prevent that code from writing to stdout.
+Applications that may log during boot must select a separate data channel.
+
+`--output FILE` writes to a private `0600` temporary file in the destination
+directory and atomically renames it after the successful-end marker is flushed:
+
+```bash
+deckard -r ./config/environment -d "User.find(1)" --output user.dump
+```
+
+Readers never observe a partial target, and a normal dump failure leaves an
+existing target unchanged. This is an atomic-visibility guarantee, not a
+power-loss durability guarantee. Existing symlinks and non-regular targets are
+rejected.
+
+`--output-fd N` streams to an inherited file descriptor numbered 3 or higher:
+
+```bash
+deckard -r ./config/environment -d "User.find(1)" --output-fd 3
+```
+
+Deckard flushes but does not close the caller-owned descriptor. The option
+preserves incremental streaming when the invoking shell separates application
+stdout from the binary transport.
+
+### 6.6 Direct SSH streaming
 
 The primary remote workflow remains a normal Unix pipeline:
 
@@ -298,12 +328,21 @@ ssh example.org "$remote_command" \
 
 SSH is only the transport. Deckard does not manage SSH connections or know anything about the remote host.
 
-### 6.6 CLI scope
+If the remote application may log to stdout, the shell reserves the transport
+as descriptor 3 before redirecting stdout to stderr:
+
+```bash
+ssh example.org \
+  "deckard -r /app/config/environment -d 'User.find(1234)' --output-fd 3 3>&1 1>&2" \
+| deckard -r ./config/environment -l
+```
+
+### 6.7 CLI scope
 
 The required v1.0 CLI is deliberately small:
 
 ```text
-deckard -r FILE -d EXPRESSION_OR_FILE
+deckard -r FILE -d EXPRESSION_OR_FILE [--output FILE | --output-fd N]
 deckard -r FILE -l
 deckard --version
 deckard --help
@@ -321,13 +360,14 @@ replicate do
 end
 ```
 
-The block provides four methods in v1.0:
+The block provides five methods in v1.0:
 
 ```ruby
 associations
 natural_key
 omit_fields
 omit_associations
+scalar_reference
 ```
 
 There is no `Deckard.configure` block and no separate model concern that applications must include.
@@ -549,12 +589,54 @@ configuration. These keys are interpreted by ActiveRecord's `dump_replicant`
 implementation. The generic `dump(object, options = {})` API remains unchanged and
 passes its options through to each replicant implementation.
 
-### 7.7 Configuration inheritance
+### 7.7 Scalar references
+
+Some schemas store a logical foreign key without declaring an ActiveRecord
+association. Such fields require explicit remapping so a destination row never
+retains a source primary key.
+
+For a conventional primary-key lookup, name a target class or deferred class
+name:
+
+```ruby
+class Snapshot < ActiveRecord::Base
+  replicate do
+    scalar_reference :current_revision_id, to: "Revision"
+  end
+end
+```
+
+For polymorphic or unconventional lookup rules, provide a resolver block. The
+block receives the owning record and the raw source value and must return the
+referenced source record:
+
+```ruby
+replicate do
+  scalar_reference(:subject_id) do |record, source_id|
+    record.resolve_subject(source_id)
+  end
+end
+```
+
+Exactly one of `to:` or a resolver block is required. At dump time Deckard:
+
+1. Leaves a nil scalar value nil without invoking the resolver.
+2. Resolves and emits the referenced record before its owner.
+3. Encodes the field as the existing `[:id, type, source_id]` tuple.
+4. Fails if a non-nil value does not resolve or cannot be emitted first.
+
+This uses the existing stream protocol and destination ID map; it does not
+change the stream version. `omit_fields` skips both the scalar field and its
+otherwise unnecessary traversal. Scalar-reference cycles have the same
+unsupported ordering semantics as association cycles.
+
+### 7.8 Configuration inheritance
 
 Deckard model configuration follows ActiveRecord inheritance:
 
 - A subclass begins with its superclass’s configuration.
 - Additional associations, field omissions, and association omissions are additive.
+- Scalar references are inherited and may be replaced by attribute name.
 - A subclass may define its own natural key.
 - Mutating a subclass’s configuration must not mutate the superclass’s configuration.
 
@@ -566,6 +648,7 @@ The default ActiveRecord traversal order is:
 
 ```text
 belongs_to associations
+scalar references
 current record
 has_one associations
 explicitly configured associations
@@ -964,6 +1047,7 @@ Deckard should use a small error hierarchy:
 ```ruby
 Deckard::Error
 Deckard::DumpError
+Deckard::OutputError
 Deckard::LoadError
 Deckard::UnsupportedAssociation
 Deckard::UnresolvedReference
@@ -993,9 +1077,13 @@ Normal errors must not print complete attribute hashes or sensitive production v
 
 All failures return a nonzero process status.
 
+`OutputError` reports invalid output targets and failures writing or publishing
+a dump stream. A closed output pipe retains its concise broken-pipe diagnostic.
+
 ## 15. Diagnostics
 
-The data stream uses standard output.
+The data stream uses standard output by default, an atomic file with
+`--output`, or an inherited descriptor with `--output-fd`.
 
 Human-readable status uses standard error.
 
@@ -1023,7 +1111,10 @@ Repository       20
 User             89
 ```
 
-The default output should remain useful in an SSH pipeline without becoming a logging subsystem.
+Deckard writes only binary frames to the selected data channel. It does not
+capture or redirect output produced by application boot code. The default
+output should remain useful in an SSH pipeline without becoming a logging
+subsystem.
 
 ## 16. Proposed internal structure
 
@@ -1044,10 +1135,11 @@ Responsibilities:
 
 ### `Deckard::CLI`
 
-- Parse `-r`, `-d`, and `-l`.
+- Parse `-r`, `-d`, `-l`, and dump output options.
 - Require the application environment.
 - Evaluate dump expressions and scripts.
-- Connect standard input and output to the dumper or loader.
+- Connect standard input and the selected output channel to the dumper or loader.
+- Atomically publish file dumps and preserve caller-owned file descriptors.
 - Return useful process statuses.
 
 ### `Deckard::Dumper`
@@ -1075,7 +1167,8 @@ Responsibilities:
 - Store associations.
 - Store the optional natural key.
 - Store field omissions and association omissions separately.
-- Implement inheritance without shared mutable arrays.
+- Store scalar-reference resolver definitions.
+- Implement inheritance without shared mutable collections.
 - Back the `replicate do ... end` model DSL.
 
 ### `Deckard::ActiveRecord`
@@ -1085,6 +1178,7 @@ Responsibilities:
 - Implement ActiveRecord `load_replicant`.
 - Traverse supported reflections.
 - Encode foreign-key references.
+- Resolve and encode configured scalar references.
 - Insert or update rows without callbacks.
 
 ### `Deckard::Status`
@@ -1107,10 +1201,11 @@ Deckard v1.0 must maintain these invariants:
 7. Multiple references to one source object resolve to one destination object.
 8. ActiveRecord validations and callbacks do not run in the default loader.
 9. Existing local records are changed only when a natural key explicitly matches them.
-10. Standard output from dump mode contains only the stream.
+10. Deckard writes only stream frames to the selected data channel.
 11. A stream without a successful-end marker does not commit.
 12. The loader never silently leaves an unresolved source foreign key in a destination row.
 13. Unsupported behavior raises rather than being approximated.
+14. A file dump becomes visible at its target only after the successful-end marker is written.
 
 ## 18. Acceptance criteria
 
@@ -1233,6 +1328,24 @@ A malformed stream, truncated stream, unresolved reference, or PostgreSQL insert
 
 HABTM associations, through associations, composite primary keys, and unsupported dependency cycles produce specific errors rather than corrupted data.
 
+### 18.17 Scalar-reference remapping
+
+```ruby
+replicate do
+  scalar_reference :current_revision_id, to: "Revision"
+end
+```
+
+emits the referenced record first and maps the scalar field to its destination
+ID. A resolver block supports nonconventional lookup, while missing targets and
+unsupported cycles fail without preserving source IDs.
+
+### 18.18 Boot-log-safe output
+
+`--output FILE` produces an atomically published stream, and `--output-fd N`
+produces an incremental stream on a caller-owned descriptor, even when
+application boot code writes to stdout.
+
 ## 19. Implementation order
 
 Status:
@@ -1290,6 +1403,7 @@ replicate do
   natural_key
   omit_fields
   omit_associations
+  scalar_reference
 end
 ```
 
@@ -1317,6 +1431,7 @@ Then add:
 - Dump-script evaluation.
 - Standard-error status.
 - Pipe-failure handling.
+- Atomic file output and inherited file-descriptor output.
 - SSH workflow documentation.
 
 ### Phase 6: Hardening and release
@@ -1372,10 +1487,10 @@ Deckard v1.0 will:
 - Use `deckard` as the gem and executable name.
 - Use `Deckard` as the Ruby namespace.
 - Use `replicate do ... end` for namespaced model configuration.
-- Expose only `associations`, `natural_key`, `omit_fields`, and `omit_associations` inside that block.
+- Expose only `associations`, `natural_key`, `omit_fields`, `omit_associations`, and `scalar_reference` inside that block.
 - Retain dump expressions and ordinary Ruby dump scripts.
 - Retain `dump_replicant` and `load_replicant`.
-- Stream directly over standard input and output.
+- Stream directly over standard input and a selected output channel.
 - Use a versioned Marshal stream.
 - Remap IDs by default.
 - Support ActiveRecord 8+.

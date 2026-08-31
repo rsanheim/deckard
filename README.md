@@ -32,7 +32,8 @@ Evaluate a Ruby expression and write the object stream to standard output:
 deckard -r ./config/environment -d "User.find(1)" > user.dump
 ```
 
-Diagnostics go to standard error; standard output carries only the stream:
+Deckard diagnostics go to standard error. With the default sink, Deckard writes
+only the stream to standard output:
 
 ```text
 dumped 4 total objects:
@@ -41,6 +42,19 @@ Profile    1
 User       1
 UserEmail  2
 ```
+
+Requiring an application can run arbitrary boot code before Deckard controls
+the dump. If that code may log to standard output, isolate the data stream in
+an atomic output file:
+
+```bash
+deckard -r ./config/environment -d "User.find(1)" --output user.dump
+```
+
+Deckard writes a private `0600` temporary file beside the destination and
+renames it only after writing the successful-end marker. A normal dump failure
+leaves an existing destination unchanged. This guarantees atomic visibility,
+not durability across a system crash or power loss.
 
 Dumping a record automatically includes its `belongs_to` and `has_one`
 associations. `has_many` collections are only dumped when opted in (see
@@ -73,7 +87,8 @@ deckard -r ./config/environment -l < repos.dump
 ## Streaming over SSH
 
 The normal remote workflow is a plain Unix pipeline — SSH is the transport,
-and no intermediate file is needed:
+and no intermediate file is needed. When the remote application is known to
+keep stdout clean:
 
 ```bash
 remote_command="deckard -r /app/config/environment -d 'User.find(1234)'"
@@ -85,6 +100,20 @@ ssh example.org "$remote_command" \
 Both ends stream: the destination begins inserting while the source is still
 traversing. If the remote side dies mid-stream, the destination transaction
 rolls back and nothing is committed.
+
+For an application that may log to stdout while booting, reserve file
+descriptor 3 for Deckard before redirecting application stdout to stderr:
+
+```bash
+ssh example.org \
+  "deckard -r /app/config/environment -d 'User.find(1234)' --output-fd 3 3>&1 1>&2" \
+  | deckard -r ./config/environment -l
+```
+
+`--output-fd` accepts an inherited descriptor numbered 3 or higher. Deckard
+writes and flushes its binary stream there without closing the caller-owned
+descriptor. Status remains on stderr. Do not point the data descriptor at the
+same channel used by application logs.
 
 ## Model configuration
 
@@ -98,9 +127,29 @@ class User < ActiveRecord::Base
     natural_key :login              # reuse an existing destination row
     omit_fields :encrypted_password # keep a field out of the stream
     omit_associations :profile      # do not traverse this association
+    scalar_reference :revision_id, to: "Revision"
   end
 end
 ```
+
+`scalar_reference` handles logical foreign-key fields that are not represented
+by ActiveRecord associations. Deckard dumps the referenced record first and
+rewrites the scalar through the same source-to-destination ID map used for
+association foreign keys. The target form looks up the source value by primary
+key. A resolver block supports unconventional or polymorphic references:
+
+```ruby
+replicate do
+  scalar_reference(:subject_id) do |record, source_id|
+    record.resolve_subject(source_id)
+  end
+end
+```
+
+A nil field stays nil. A non-nil field that cannot be resolved fails the dump
+instead of copying a potentially invalid source ID. `omit_fields` skips both
+the scalar field and its traversal. Like other references, unsupported cycles
+fail when the referenced record cannot be emitted first.
 
 A dump call can also add associations or omissions for just that dump:
 

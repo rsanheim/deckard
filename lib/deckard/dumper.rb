@@ -11,7 +11,7 @@ module Deckard
       @dumped = Set.new
       @in_progress = Set.new
       @counts = Hash.new(0)
-      Marshal.dump(STREAM_HEADER, @output)
+      write_frame(STREAM_HEADER)
     end
 
     # Dump one object, or each element of an enumerable. The object must
@@ -58,14 +58,24 @@ module Deckard
       return if @dumped.include?([type, id])
 
       @dumped.add([type, id])
-      Marshal.dump([type, id, attributes], @output)
+      write_frame([type, id, attributes])
       @counts[type] += 1
     end
 
     # Write the successful-end marker. A stream without it is treated as
     # truncated and never commits on the destination.
     def complete
-      Marshal.dump(STREAM_END, @output)
+      write_frame(STREAM_END)
+    end
+
+    private
+
+    def write_frame(frame)
+      Marshal.dump(frame, @output)
+    rescue Errno::EPIPE
+      raise
+    rescue IOError, SystemCallError => e
+      raise OutputError, "could not write dump stream: #{Deckard.error_detail(e)}", cause: e
     end
   end
 end

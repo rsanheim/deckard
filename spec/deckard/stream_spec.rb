@@ -138,6 +138,16 @@ RSpec.describe "Deckard stream" do
     expect { dumper.dump(Object.new) }.to raise_error(Deckard::DumpError, /dump_replicant/)
   end
 
+  it "reports an output error when an IO failure has no message" do
+    output = Object.new
+    output.define_singleton_method(:write) { |*| raise IOError, "" }
+
+    expect { Deckard::Dumper.new(output) }
+      .to raise_error(Deckard::OutputError, /\(no message\)/) do |error|
+        expect(error.cause).to be_a(IOError)
+      end
+  end
+
   it "raises InvalidStream on a truncated stream and loads nothing after the truncation" do
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)
