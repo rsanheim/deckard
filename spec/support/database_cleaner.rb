@@ -5,19 +5,23 @@ require_relative "test_database"
 
 # Cleans the test database around each `:db`-tagged example. Transactions
 # are the default (fastest); tag an example `db: :truncation` when its
-# writes must escape or observe a real transaction boundary (rollback
-# assertions, subprocesses, perf measurements).
+# writes must escape or observe a real transaction boundary, or
+# `db: :multiple` when it uses both test databases.
 RSpec.configure do |config|
-  config.before(:each, :db) do |example|
-    if (error = DeckardTestDatabase.setup)
-      skip "PostgreSQL unavailable at #{DeckardTestDatabase::URL} (#{error}). " \
-        "Start a server there or set DECKARD_TEST_DATABASE_URL."
-    end
-    DatabaseCleaner.strategy = (example.metadata[:db] == :truncation) ? :truncation : :transaction
-    DatabaseCleaner.start
-  end
+  config.around(:each, :db) do |example|
+    DeckardTestDatabase.setup
+    cleaners = DatabaseCleaner::Cleaners.new
 
-  config.after(:each, :db) do
-    DatabaseCleaner.clean unless DeckardTestDatabase.setup
+    if example.metadata[:db] == :multiple
+      DeckardTestDatabase.setup_destination
+      cleaners[:active_record, db: DeckardTestDatabase::SourceRecord].strategy = :truncation
+      cleaners[:active_record, db: DeckardTestDatabase::DestinationRecord].strategy = :truncation
+      cleaners.clean_with(:truncation)
+    else
+      strategy = (example.metadata[:db] == :truncation) ? :truncation : :transaction
+      cleaners[:active_record, db: ActiveRecord::Base].strategy = strategy
+    end
+
+    cleaners.cleaning { example.run }
   end
 end

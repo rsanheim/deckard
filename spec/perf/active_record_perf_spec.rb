@@ -15,9 +15,7 @@ require_relative "../support/test_models"
 # acceptable for v1.0" - so load bounds here are deliberately loose.
 RSpec.describe "Deckard ActiveRecord performance", perf: true, db: :truncation do
   def create_author(name)
-    author = Author.new(name: name)
-    author.save!(validate: false)
-    author
+    Author.create!(name: name)
   end
 
   # Inserts post_count posts under author, each with comments_per_post

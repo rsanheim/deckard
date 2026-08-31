@@ -68,8 +68,7 @@ RSpec.describe "replicate model DSL", :db do
   end
 
   it "includes per-dump associations, skipping classes that lack them" do
-    author = Author.new(name: "Rachael")
-    author.save!(validate: false)
+    author = Author.create!(name: "Rachael")
     Profile.create!(author: author, bio: "More human than human")
     Post.create!(author: author, title: "Nexus-6 field notes")
 
@@ -80,31 +79,40 @@ RSpec.describe "replicate model DSL", :db do
     expect(dumper.counts).to eq("Author" => 1, "Profile" => 1, "Post" => 1)
   end
 
-  it "applies per-dump omissions to attributes and associations" do
-    author = Author.new(name: "Rachael")
-    author.save!(validate: false)
+  it "applies per-dump field and association omissions independently" do
+    author = Author.create!(name: "Rachael")
     Profile.create!(author: author, bio: "unused")
 
-    io, dumper = stream(author, omit: [:created_at, :profile])
+    io, dumper = stream(author, omit_fields: [:created_at], omit_associations: [:profile])
 
     expect(dumper.counts).to eq("Author" => 1)
     expect(frames(io).first[2]).not_to have_key("created_at")
   end
 
-  it "omitting a belongs_to by association name or foreign key drops traversal and the key" do
+  it "omitting a belongs_to association skips traversal but preserves its foreign key" do
     library = Library.create!(name: "LAPD archive")
     book = Book.create!(library: library, title: "Case file")
 
-    [{omit: [:library]}, {omit: [:library_id]}].each do |options|
-      io, dumper = stream(book, options)
-      expect(dumper.counts).to eq("Book" => 1)
-      expect(frames(io).first[2]).not_to have_key("library_id")
+    io, dumper = stream(book, omit_associations: [:library])
+    expect(dumper.counts).to eq("Book" => 1)
 
-      io.rewind
-      Deckard::Loader.new(io).load
-    end
+    Deckard::Loader.new(io).load
 
-    expect(Book.where.not(id: book.id).pluck(:library_id)).to eq([nil, nil])
+    expect(Book.where.not(id: book.id).sole.library_id).to eq(library.id)
+  end
+
+  it "omitting a foreign-key field still traverses the association" do
+    library = Library.create!(name: "LAPD archive")
+    book = Book.create!(library: library, title: "Case file")
+
+    io, dumper = stream(book, omit_fields: [:library_id])
+    expect(dumper.counts).to eq("Library" => 1, "Book" => 1)
+    expect(frames(io).last[2]).not_to have_key("library_id")
+
+    io.rewind
+    Deckard::Loader.new(io).load
+
+    expect(Book.where.not(id: book.id).sole.library_id).to be_nil
   end
 
   it "reuses and updates an existing destination record matched by natural key" do

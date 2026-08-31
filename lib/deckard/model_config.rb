@@ -5,12 +5,13 @@ module Deckard
   # A subclass copies its superclass's configuration when its own config is
   # first touched, so mutating one class never mutates another.
   class ModelConfig
-    attr_reader :extra_associations, :natural_key_attributes, :omissions
+    attr_reader :extra_associations, :natural_key_attributes, :omitted_fields, :omitted_associations
 
     def initialize(parent = nil)
       @extra_associations = parent ? parent.extra_associations.dup : []
       @natural_key_attributes = parent ? parent.natural_key_attributes.dup : []
-      @omissions = parent ? parent.omissions.dup : []
+      @omitted_fields = parent ? parent.omitted_fields.dup : []
+      @omitted_associations = parent ? parent.omitted_associations.dup : []
     end
 
     # DSL: additional association names to dump beyond the automatic
@@ -25,10 +26,14 @@ module Deckard
       @natural_key_attributes = attributes.map(&:to_sym)
     end
 
-    # DSL: attribute and association names to exclude from the stream.
-    # Additive across calls.
-    def omit(*names)
-      @omissions.concat(names.map(&:to_sym))
+    # DSL: fields to exclude from dumped attributes. Additive across calls.
+    def omit_fields(*names)
+      @omitted_fields.concat(names.map(&:to_sym))
+    end
+
+    # DSL: associations not to traverse. Additive across calls.
+    def omit_associations(*names)
+      @omitted_associations.concat(names.map(&:to_sym))
     end
   end
 end

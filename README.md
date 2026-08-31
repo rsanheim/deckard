@@ -96,7 +96,8 @@ class User < ActiveRecord::Base
   replicate do
     associations :email_addresses   # opt this has_many into dumps
     natural_key :login              # reuse an existing destination row
-    omit :encrypted_password        # keep an attribute out of the stream
+    omit_fields :encrypted_password # keep a field out of the stream
+    omit_associations :profile      # do not traverse this association
   end
 end
 ```
@@ -104,7 +105,10 @@ end
 A dump call can also add associations or omissions for just that dump:
 
 ```ruby
-dump User.all, associations: [:email_addresses], omit: [:created_at]
+dump User.all,
+  associations: [:email_addresses],
+  omit_fields: [:created_at],
+  omit_associations: [:profile]
 ```
 
 ## Security
@@ -121,4 +125,5 @@ plaintext and are re-encrypted with the destination's keys on load.
 `bundle exec rake` runs the unit/integration suite (specs against a local
 PostgreSQL 18, lint, and a style ratchet). `bundle exec rake e2e` runs the
 full-stack test: a real Rails app streaming between two docker compose
-containers. See `docs/spec.md` for the v1.0 specification.
+containers. `bundle exec rake test-all` runs both host-side checks and the
+full-stack test. See `docs/spec.md` for the v1.0 specification.

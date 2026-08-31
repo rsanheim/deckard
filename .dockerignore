@@ -1,4 +1,8 @@
 .git
+.bundle
+.rspec_status
+.ruby-lsp
 harness/log
 harness/tmp
 harness/.bundle
+harness/config/master.key

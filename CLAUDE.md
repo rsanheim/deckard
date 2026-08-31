@@ -33,7 +33,7 @@ Two tiers with a hard boundary:
 - Unit/integration (`spec/`): a normal gem suite, runs on the host via `bundle exec rake`.
   The ActiveRecord specs use a real local PostgreSQL
   (default `postgres://127.0.0.1:5433/deckard_gem_test`, override with
-  `DECKARD_TEST_DATABASE_URL`) and skip loudly when no server is reachable.
+  `DECKARD_TEST_DATABASE_URL`) and fail when no server is reachable.
 - E2E / full-stack (`harness/`): a real Rails 8.1 app streamed between two containers,
   entirely inside docker compose — source app + source PostgreSQL, destination app +
   destination PostgreSQL, no ports exposed to the host. Run with `bundle exec rake e2e`

@@ -8,10 +8,18 @@ require "active_record"
 class Author < ActiveRecord::Base
   has_one :profile
   has_many :posts
+  has_many :comments
+  has_many :payments, as: :billable
+  has_many :commented_posts, through: :comments, source: :post
+  has_and_belongs_to_many :bookmarked_posts,
+    class_name: "Post",
+    join_table: "bookmarks",
+    association_foreign_key: "post_id"
 
-  # Both guards prove the loader's bypass: any load that runs them fails.
+  # These guards let the loader specs prove that callbacks and validations
+  # are bypassed without making every Author fixture invalid.
   before_save { self.class.callbacks_fired << name }
-  validate { errors.add(:base, "always invalid") }
+  validate { errors.add(:base, "invalid replicant") if name == "Invalid Replicant" }
 
   def self.callbacks_fired
     @callbacks_fired ||= []
@@ -25,6 +33,10 @@ end
 class Post < ActiveRecord::Base
   belongs_to :author
   has_many :comments
+  has_and_belongs_to_many :bookmarking_authors,
+    class_name: "Author",
+    join_table: "bookmarks",
+    association_foreign_key: "author_id"
 end
 
 class Comment < ActiveRecord::Base
@@ -72,7 +84,7 @@ class Library < ActiveRecord::Base
 
   replicate do
     associations :books
-    omit :secret
+    omit_fields :secret
   end
 end
 

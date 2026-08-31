@@ -8,39 +8,68 @@ require "active_record"
 # touches nothing: call .setup from a spec hook.
 module DeckardTestDatabase
   URL = ENV.fetch("DECKARD_TEST_DATABASE_URL", "postgres://127.0.0.1:5433/deckard_gem_test")
+  DESTINATION_URL = ENV.fetch("DECKARD_TEST_DESTINATION_DATABASE_URL") do
+    uri = URI(URL)
+    uri.path = "#{uri.path}_destination"
+    uri.to_s
+  end
 
-  TABLES = %w[comments payments profiles posts authors cycle_as cycle_bs
+  TABLES = %w[bookmarks comments payments profiles posts authors cycle_as cycle_bs
     reader_emails readers books libraries cargos ships employees artifacts
     itineraries].freeze
 
+  class SourceRecord < ActiveRecord::Base
+    self.abstract_class = true
+  end
+
+  class DestinationRecord < ActiveRecord::Base
+    self.abstract_class = true
+  end
+
   # Connect, create the test database if missing, verify the server runs
   # PostgreSQL 18 (matching the e2e harness), and define the schema.
-  # Memoized across calls; returns nil when ready, or an error description
-  # when no server is reachable. A reachable server on the wrong major
-  # version raises instead of skipping.
+  # Memoized across calls; connection and setup failures propagate.
   def self.setup
-    return @setup_error if defined?(@setup_error)
-    @setup_error = connect_and_define_schema
+    return if @setup
+
+    connect_and_define_schema(URL)
+    SourceRecord.establish_connection(URL)
+    @setup = true
+  end
+
+  def self.setup_destination
+    return if @destination_setup
+
+    connect_and_define_schema(DESTINATION_URL)
+    DestinationRecord.establish_connection(DESTINATION_URL)
+    @destination_setup = true
+  ensure
+    ActiveRecord::Base.establish_connection(URL)
+  end
+
+  def self.with_destination
+    ActiveRecord::Base.establish_connection(DESTINATION_URL)
+    yield
+  ensure
+    ActiveRecord::Base.establish_connection(URL)
   end
 
   def self.truncate
     ActiveRecord::Base.connection.execute("TRUNCATE #{TABLES.join(", ")} RESTART IDENTITY")
   end
 
-  def self.connect_and_define_schema
-    create_database
-    ActiveRecord::Base.establish_connection(URL)
-    check_server_version
+  def self.connect_and_define_schema(url)
+    create_database(url)
+    ActiveRecord::Base.establish_connection(url)
+    check_server_version(url)
     configure_encryption
     define_schema
     nil
-  rescue PG::Error, ActiveRecord::ConnectionNotEstablished => e
-    "#{e.class}: #{e.message.strip.lines.first}"
   end
   private_class_method :connect_and_define_schema
 
-  def self.create_database
-    admin_uri = URI(URL)
+  def self.create_database(url)
+    admin_uri = URI(url)
     database = admin_uri.path.delete_prefix("/")
     admin_uri.path = "/postgres"
     admin = PG.connect(admin_uri.to_s)
@@ -51,11 +80,11 @@ module DeckardTestDatabase
   end
   private_class_method :create_database
 
-  def self.check_server_version
+  def self.check_server_version(url)
     version = ActiveRecord::Base.connection.select_value("SHOW server_version")
     unless version.start_with?("18.")
       raise "deckard specs must run against PostgreSQL 18 to match the e2e harness; " \
-        "#{URL} is running #{version}"
+        "#{url} is running #{version}"
     end
   end
   private_class_method :check_server_version
@@ -76,6 +105,14 @@ module DeckardTestDatabase
       create_enum :artifact_mood, %w[calm ominous]
       create_table :authors, force: :cascade do |t|
         t.string :name, null: false
+        t.string :username
+        t.string :email
+        t.text :bio
+        t.string :location
+        t.string :website
+        t.boolean :verified, null: false, default: false
+        t.json :settings
+        t.datetime :joined_at
         t.timestamps
       end
 
@@ -87,12 +124,24 @@ module DeckardTestDatabase
       create_table :posts, force: :cascade do |t|
         t.references :author, null: false
         t.string :title, null: false
+        t.text :body
+        t.string :description
+        t.json :metadata
+        t.string :visibility, null: false, default: "public"
+        t.string :language
+        t.boolean :sensitive, null: false, default: false
+        t.datetime :published_at
       end
 
       create_table :comments, force: :cascade do |t|
         t.references :post, null: false
         t.references :author, null: false
         t.string :body
+      end
+
+      create_table :bookmarks, id: false, force: :cascade do |t|
+        t.references :author, null: false
+        t.references :post, null: false
       end
 
       create_table :payments, force: :cascade do |t|
