@@ -1337,7 +1337,8 @@ Complete:
 Also completed beyond the original list: ActiveRecord edge-case coverage
 (generated columns, native PostgreSQL enums, ActiveRecord encryption with
 cross-environment keys, STI references, self-referential associations,
-composite-PK errors), informed by the failure modes in clarice PR 964.
+composite-PK errors), informed by failures observed in downstream application
+integration testing.
 
 ## 20. Deferred work
 
