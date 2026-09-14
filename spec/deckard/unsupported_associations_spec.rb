@@ -2,11 +2,11 @@
 
 require "stringio"
 require_relative "../support/database_cleaner"
-require_relative "../support/test_models"
+require_relative "../support/forum_models"
 
 RSpec.describe "unsupported ActiveRecord associations", :db do
   it "rejects a selected HABTM association before emitting records" do
-    author = Author.create!(name: "Jane Doe")
+    author = Author.create!(username: "rachael", name: "Rachael")
     post = author.posts.create!(title: "Replicant writers club")
     author.bookmarked_posts << post
     dumper = Deckard::Dumper.new(StringIO.new)
@@ -20,8 +20,8 @@ RSpec.describe "unsupported ActiveRecord associations", :db do
   end
 
   it "rejects a selected has_many through association with the join association to use" do
-    author = Author.create!(name: "Jane Doe")
-    publisher = Author.create!(name: "Ana Stelline")
+    author = Author.create!(username: "rachael", name: "Rachael")
+    publisher = Author.create!(username: "stelline", name: "Ana Stelline")
     post = publisher.posts.create!(title: "Memory design")
     post.comments.create!(author: author, body: "Beautiful work")
     dumper = Deckard::Dumper.new(StringIO.new)

@@ -2,9 +2,13 @@
 
 require "stringio"
 require_relative "../support/database_cleaner"
-require_relative "../support/test_models"
+require_relative "../support/forum_models"
 
 RSpec.describe "replicate model DSL", :db do
+  def create_author(username, name = username.capitalize)
+    Author.create!(username: username, name: name)
+  end
+
   def stream(objects, options = {})
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)
@@ -26,49 +30,52 @@ RSpec.describe "replicate model DSL", :db do
   end
 
   it "dumps has_many associations configured in the replicate block" do
-    library = Library.create!(name: "LAPD archive", secret: "s3krit")
-    2.times { |i| Book.create!(library: library, title: "Case file #{i}") }
+    author = create_author("rachael")
+    attachment = Attachment.create!(author: author, filename: "esper-photo.png")
+    %w[thumbnail enhanced].each { |variant| AttachmentVariant.create!(attachment: attachment, variant: variant) }
 
-    io, dumper = stream(library)
-    expect(dumper.counts).to eq("Library" => 1, "Book" => 2)
+    io, dumper = stream(attachment)
+    expect(dumper.counts).to eq("Author" => 1, "Attachment" => 1, "AttachmentVariant" => 2)
 
     Deckard::Loader.new(io).load
-    new_library = Library.where.not(id: library.id).sole
-    expect(new_library.books.count).to eq(2)
+    new_attachment = Attachment.where.not(id: attachment.id).sole
+    expect(new_attachment.variants.count).to eq(2)
   end
 
   it "omits attributes configured in the replicate block" do
-    library = Library.create!(name: "LAPD archive", secret: "s3krit")
+    category = Category.create!(name: "General", slug: "general", moderator_notes: "watch for spam")
 
-    io, _ = stream(library)
+    io, _ = stream(category)
 
-    library_frame = frames(io).find { |type, _, _| type == "Library" }
-    expect(library_frame[2]).not_to have_key("secret")
+    category_frame = frames(io).find { |type, _, _| type == "Category" }
+    expect(category_frame[2]).not_to have_key("moderator_notes")
 
     io.rewind
+    category.update_columns(slug: "general-source")
     Deckard::Loader.new(io).load
-    expect(Library.where.not(id: library.id).sole.secret).to be_nil
+    expect(Category.where.not(id: category.id).sole.moderator_notes).to be_nil
   end
 
   it "inherits replicate configuration in subclasses" do
-    library = SpecialLibrary.create!(name: "Tyrell private stacks", secret: "s3krit")
-    Book.create!(library: library, title: "Owl schematics")
+    category = AnnouncementCategory.create!(name: "Announcements", slug: "announcements", moderator_notes: "pin sparingly")
 
-    io, dumper = stream(library)
-    expect(dumper.counts).to eq("SpecialLibrary" => 1, "Book" => 1)
+    io, dumper = stream(category)
+    expect(dumper.counts).to eq("AnnouncementCategory" => 1)
+    expect(frames(io).sole[2]).not_to have_key("moderator_notes")
 
+    io.rewind
     Deckard::Loader.new(io).load
-    expect(SpecialLibrary.where.not(id: library.id).sole.books.sole.title).to eq("Owl schematics")
+    expect(Category.sole).to eq(category)
   end
 
   it "raises DumpError when a replicate block names a missing association" do
-    broken = MisconfiguredLibrary.create!(name: "broken")
+    broken = MisconfiguredCategory.create!(name: "broken", slug: "broken")
 
-    expect { stream(broken) }.to raise_error(Deckard::DumpError, /branches/)
+    expect { stream(broken) }.to raise_error(Deckard::DumpError, /moderators/)
   end
 
   it "includes per-dump associations, skipping classes that lack them" do
-    author = Author.create!(name: "Rachael")
+    author = create_author("rachael")
     Profile.create!(author: author, bio: "More human than human")
     Post.create!(author: author, title: "Nexus-6 field notes")
 
@@ -80,7 +87,7 @@ RSpec.describe "replicate model DSL", :db do
   end
 
   it "applies per-dump field and association omissions independently" do
-    author = Author.create!(name: "Rachael")
+    author = create_author("rachael")
     Profile.create!(author: author, bio: "unused")
 
     io, dumper = stream(author, omit_fields: [:created_at], omit_associations: [:profile])
@@ -90,71 +97,73 @@ RSpec.describe "replicate model DSL", :db do
   end
 
   it "omitting a belongs_to association skips traversal but preserves its foreign key" do
-    library = Library.create!(name: "LAPD archive")
-    book = Book.create!(library: library, title: "Case file")
+    author = create_author("rachael")
+    category = Category.create!(name: "General", slug: "general")
+    post = Post.create!(author: author, category: category, title: "Nexus-6 field notes")
 
-    io, dumper = stream(book, omit_associations: [:library])
-    expect(dumper.counts).to eq("Book" => 1)
+    io, dumper = stream(post, omit_associations: [:category])
+    expect(dumper.counts).to eq("Author" => 1, "Post" => 1)
 
     Deckard::Loader.new(io).load
 
-    expect(Book.where.not(id: book.id).sole.library_id).to eq(library.id)
+    expect(Post.where.not(id: post.id).sole.category_id).to eq(category.id)
   end
 
   it "omitting a foreign-key field still traverses the association" do
-    library = Library.create!(name: "LAPD archive")
-    book = Book.create!(library: library, title: "Case file")
+    author = create_author("rachael")
+    category = Category.create!(name: "General", slug: "general")
+    post = Post.create!(author: author, category: category, title: "Nexus-6 field notes")
 
-    io, dumper = stream(book, omit_fields: [:library_id])
-    expect(dumper.counts).to eq("Library" => 1, "Book" => 1)
-    expect(frames(io).last[2]).not_to have_key("library_id")
+    io, dumper = stream(post, omit_fields: [:category_id])
+    expect(dumper.counts).to eq("Author" => 1, "Category" => 1, "Post" => 1)
+    expect(frames(io).last[2]).not_to have_key("category_id")
 
     io.rewind
     Deckard::Loader.new(io).load
 
-    expect(Book.where.not(id: book.id).sole.library_id).to be_nil
+    expect(Post.where.not(id: post.id).sole.category_id).to be_nil
   end
 
   it "reuses and updates an existing destination record matched by natural key" do
-    source_reader = Reader.create!(login: "rob", email: "rob@source.example")
-    ReaderEmail.create!(reader: source_reader, email: "rob@shared.example", label: "from-source")
-    io, _ = stream(ReaderEmail.all)
+    source_author = Author.create!(username: "rob", name: "Rob", email: "rob@source.example")
+    AuthorEmail.create!(author: source_author, address: "rob@shared.example", label: "from-source")
+    io, _ = stream(AuthorEmail.all)
 
     DeckardTestDatabase.truncate
-    existing = Reader.create!(login: "rob", email: "rob@dest.example")
-    ReaderEmail.create!(reader: existing, email: "rob@shared.example", label: "stale")
+    existing = Author.create!(username: "rob", name: "Rob", email: "rob@dest.example")
+    AuthorEmail.create!(author: existing, address: "rob@shared.example", label: "stale")
 
-    Reader.callbacks_fired.clear
+    Author.callbacks_fired.clear
     Deckard::Loader.new(io).load
 
-    expect(Reader.callbacks_fired).to be_empty
-    expect(Reader.sole.id).to eq(existing.id)
-    expect(Reader.sole.email).to eq("rob@source.example")
-    email = ReaderEmail.sole
-    expect(email.reader_id).to eq(existing.id)
+    expect(Author.callbacks_fired).to be_empty
+    expect(Author.sole.id).to eq(existing.id)
+    expect(Author.sole.email).to eq("rob@source.example")
+    email = AuthorEmail.sole
+    expect(email.author_id).to eq(existing.id)
     expect(email.label).to eq("from-source")
   end
 
   it "creates a new record when the natural key matches nothing" do
-    Reader.create!(login: "rob", email: "rob@source.example")
-    io, _ = stream(Reader.all)
+    Author.create!(username: "rob", name: "Rob", email: "rob@source.example")
+    io, _ = stream(Author.all)
 
     DeckardTestDatabase.truncate
     Deckard::Loader.new(io).load
 
-    expect(Reader.sole.login).to eq("rob")
+    expect(Author.sole.username).to eq("rob")
   end
 
   it "fails and rolls back when the natural key is ambiguous" do
-    Reader.create!(login: "rob", email: "rob@source.example")
-    io, _ = stream(Reader.all)
+    Tag.create!(name: "replicants", slug: "replicants")
+    io, _ = stream(Tag.all)
 
     DeckardTestDatabase.truncate
-    Reader.create!(login: "rob", email: "first@dest.example")
-    Reader.create!(login: "rob", email: "second@dest.example")
+    Tag.create!(name: "replicants", slug: "replicants-first")
+    Tag.create!(name: "replicants", slug: "replicants-second")
 
     expect { Deckard::Loader.new(io).load }
-      .to raise_error(Deckard::LoadError, /natural key \(login\) matches more than one/)
-    expect(Reader.pluck(:email)).to match_array(["first@dest.example", "second@dest.example"])
+      .to raise_error(Deckard::LoadError, /natural key \(name\) matches more than one/)
+    expect(Tag.pluck(:slug)).to match_array(["replicants-first", "replicants-second"])
   end
 end

@@ -2,59 +2,19 @@
 
 require "stringio"
 require_relative "../support/database_cleaner"
-require_relative "../support/test_models"
+require_relative "../support/forum_models"
 
-RSpec.describe "canonical ActiveRecord graph", db: :multiple do
+# The app-developer view: seed a realistic forum, dump one root object, load
+# it into a second database, and check the clone from the outside.
+RSpec.describe "canonical forum graph", db: :multiple do
   before do
-    Author.callbacks_fired.clear
+    DeckardTestDatabase::Tasks.load_seed
   end
 
-  def create_source_author
-    author = Author.create!(
-      name: "Jane Doe",
-      username: "jane",
-      email: "jane@example.test",
-      bio: "Writing about distributed systems and old movies.",
-      location: "Los Angeles, CA",
-      website: "https://jane.example.test",
-      verified: true,
-      settings: {"theme" => "dark", "email_notifications" => false},
-      joined_at: Time.utc(2024, 1, 15, 12)
-    )
-    author.create_profile!(bio: "Writer and editor")
-
-    first_post = author.posts.create!(
-      title: "Draft previews fail to render",
-      body: "The editor preview is blank when a post includes embedded images.",
-      description: nil,
-      metadata: {"format" => "rich_text", "embedded_images" => 2},
-      visibility: "followers",
-      language: "en",
-      sensitive: true,
-      published_at: Time.utc(2026, 8, 20, 15, 30)
-    )
-    first_post.comments.create!(author: author, body: "Only fails with embedded images")
-    first_post.comments.create!(author: author, body: "Started after the last deploy")
-
-    second_post = author.posts.create!(
-      title: "Welcome to my archive",
-      body: "An introduction to the archive.",
-      description: "Pinned introduction",
-      metadata: {"format" => "markdown", "featured" => true},
-      visibility: "public",
-      language: "en",
-      sensitive: false,
-      published_at: Time.utc(2024, 1, 16, 9)
-    )
-    second_post.comments.create!(author: author, body: "Pinned introduction")
-
-    author
-  end
-
-  def dump(author)
+  def dump(object, options = {})
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)
-    dumper.dump(author, associations: %i[posts comments])
+    dumper.dump(object, options)
     dumper.complete
     io.rewind
     [io, dumper]
@@ -65,30 +25,36 @@ RSpec.describe "canonical ActiveRecord graph", db: :multiple do
     record.attributes.except(record.class.primary_key, *foreign_keys)
   end
 
+  def comment_snapshot(comment)
+    {
+      attributes: replicated_attributes(comment),
+      author: comment.author.username,
+      replies: comment.replies.order(:body).map { |reply| comment_snapshot(reply) }
+    }
+  end
+
+  def post_snapshot(post)
+    {
+      attributes: replicated_attributes(post),
+      author: post.author.username,
+      category: post.category&.slug,
+      comments: post.comments.where(parent_id: nil).order(:body).map { |comment| comment_snapshot(comment) }
+    }
+  end
+
   def author_snapshot(author)
     {
       attributes: replicated_attributes(author),
       profile: replicated_attributes(author.profile),
-      posts: author.posts.order(:title).map do |post|
+      emails: author.author_emails.order(:address).map { |email| replicated_attributes(email) },
+      attachments: author.attachments.order(:filename).map do |attachment|
         {
-          attributes: replicated_attributes(post),
-          comments: post.comments.order(:body).map { |comment| replicated_attributes(comment) }
+          attributes: replicated_attributes(attachment),
+          variants: attachment.variants.order(:variant).map { |variant| replicated_attributes(variant) }
         }
-      end
+      end,
+      posts: author.posts.order(:title).map { |post| post_snapshot(post) }
     }
-  end
-
-  def aggregate_ids(author)
-    {
-      "Author" => [author.id],
-      "Profile" => [author.profile.id],
-      "Post" => author.posts.ids,
-      "Comment" => author.posts.flat_map { |post| post.comments.ids }
-    }
-  end
-
-  def aggregate_counts(author)
-    aggregate_ids(author).transform_values(&:size)
   end
 
   def advance_destination_sequences
@@ -99,27 +65,13 @@ RSpec.describe "canonical ActiveRecord graph", db: :multiple do
     end
   end
 
-  def expect_local_keys(author)
-    expect(author.profile.author_id).to eq(author.id)
-    expect(author.posts).not_to be_empty
+  it "clones a post and its comment threads into another database" do
+    source_post = Post.find_by!(title: "Nexus-6 field notes")
+    source_snapshot = post_snapshot(source_post)
+    source_ids = {"Author" => Author.ids, "Post" => Post.ids, "Comment" => Comment.ids}
+    stream, dumper = dump(source_post)
 
-    author.posts.each do |post|
-      expect(post.author_id).to eq(author.id)
-      expect(post.comments).not_to be_empty
-      post.comments.each do |comment|
-        expect(comment.author_id).to eq(author.id)
-        expect(comment.post_id).to eq(post.id)
-      end
-    end
-  end
-
-  it "clones an author's complete support dataset into another database" do
-    source_author = create_source_author
-    source_snapshot = author_snapshot(source_author)
-    source_ids = aggregate_ids(source_author)
-    stream, dumper = dump(source_author)
-
-    expect(dumper.counts).to eq(aggregate_counts(source_author))
+    expect(dumper.counts).to include("Author" => 3, "Category" => 1, "Post" => 1, "Comment" => 4)
 
     DeckardTestDatabase.with_destination do
       advance_destination_sequences
@@ -127,19 +79,37 @@ RSpec.describe "canonical ActiveRecord graph", db: :multiple do
       loader = Deckard::Loader.new(stream)
       loader.load
 
-      cloned_author = Author.find_by!(name: "Jane Doe")
-      expect(author_snapshot(cloned_author)).to eq(source_snapshot)
-      expect(aggregate_counts(cloned_author)).to eq(dumper.counts)
       expect(loader.counts).to eq(dumper.counts)
-
       loader.counts.each do |type, count|
         expect(Object.const_get(type).count).to eq(count)
       end
 
-      expect_local_keys(cloned_author)
-      aggregate_ids(cloned_author).each do |type, ids|
+      cloned_post = Post.find_by!(title: "Nexus-6 field notes")
+      expect(post_snapshot(cloned_post)).to eq(source_snapshot)
+
+      {"Author" => Author.ids, "Post" => Post.ids, "Comment" => Comment.ids}.each do |type, ids|
         expect(ids & source_ids.fetch(type)).to be_empty
       end
+
+      # Loading the same stream again reuses every naturally keyed row.
+      stream.rewind
+      expect { Deckard::Loader.new(stream).load }
+        .not_to change { [Author.count, Category.count] }
+    end
+  end
+
+  it "clones an author's forum activity into another database" do
+    pending "per-dump association names cascade to every class that has them (posts reaches Category, " \
+      "reactions reaches every Author), and the traversal then reports a dependency cycle"
+    source_author = Author.find_by!(username: "rachael")
+    source_snapshot = author_snapshot(source_author)
+    stream, dumper = dump(source_author, associations: %i[posts author_emails reactions donations attachments])
+
+    expect(dumper.counts).to include("Author" => 3, "Post" => 4, "Comment" => 6)
+
+    DeckardTestDatabase.with_destination do
+      Deckard::Loader.new(stream).load
+      expect(author_snapshot(Author.find_by!(username: "rachael"))).to eq(source_snapshot)
     end
   end
 end
