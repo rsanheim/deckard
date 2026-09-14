@@ -36,6 +36,25 @@ RSpec.describe Deckard::ActiveRecord, :db do
     expect(new_note.reader).to eq(reader)
   end
 
+  it "does not reload a belongs_to parent that is already in the stream" do
+    author = create_author("Rachael")
+    ids = 3.times.map { |i| Post.create!(author: author, title: "Post #{i}").id }
+    fresh_posts = Post.where(id: ids).order(:id).to_a
+
+    author_queries = 0
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      author_queries += 1 if payload[:sql].include?('"authors"')
+    end
+    io, dumper = stream(fresh_posts)
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+
+    expect(author_queries).to eq(1)
+    expect(dumper.counts).to eq("Author" => 1, "Post" => 3)
+    Deckard::Loader.new(io).load
+    new_author = Author.where.not(id: author.id).sole
+    expect(Post.where(author_id: new_author.id).count).to eq(3)
+  end
+
   it "round trips a graph with destination-generated keys and remapped foreign keys" do
     author = create_author("Rachael")
     post = Post.create!(author: author, title: "Nexus-6 field notes")

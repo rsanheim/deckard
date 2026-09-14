@@ -80,6 +80,7 @@ module Deckard
         @model.reflect_on_all_associations(:belongs_to).each do |reflection|
           foreign_key = reflection.foreign_key.to_s
           next if @omitted_associations.include?(reflection.name)
+          next if encode_dumped_parent(attributes, reflection, foreign_key)
 
           referenced = @record.public_send(reflection.name)
           next if referenced.nil?
@@ -100,6 +101,21 @@ module Deckard
 
           attributes[foreign_key] = [:id, referenced.class.name, referenced_id]
         end
+      end
+
+      # When the parent is already in the stream under the association's
+      # declared class, encode the reference from the foreign key alone
+      # instead of loading the parent again. A parent dumped as an STI
+      # subclass misses this check and takes the loading path.
+      def encode_dumped_parent(attributes, reflection, foreign_key)
+        return false if reflection.polymorphic?
+        return false unless reflection.association_primary_key == reflection.klass.primary_key
+
+        value = @record[foreign_key]
+        return false if value.nil? || !@dumper.dumped?(reflection.klass.name, value)
+
+        attributes[foreign_key] = [:id, reflection.klass.name, value] unless @omitted_fields.include?(foreign_key.to_sym)
+        true
       end
 
       def dump_has_one
