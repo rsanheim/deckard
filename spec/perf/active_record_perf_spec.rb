@@ -6,7 +6,7 @@ require_relative "../support/test_models"
 
 # Performance tests for the ActiveRecord replicant path (real PostgreSQL).
 # Excluded from the default suite; run with
-# `DECKARD_PERF=1 bundle exec rspec spec/perf/active_record_perf_spec.rb`.
+# `bundle exec rspec --tag perf spec/perf/active_record_perf_spec.rb`.
 # Truncation cleaning: a wrapping test transaction would distort the timing
 # and RSS numbers these examples measure.
 #
