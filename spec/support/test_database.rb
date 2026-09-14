@@ -7,7 +7,7 @@ require "active_record"
 # Real-PostgreSQL setup for the ActiveRecord specs. Requiring this file
 # touches nothing: call .setup from a spec hook.
 module DeckardTestDatabase
-  URL = ENV.fetch("DECKARD_TEST_DATABASE_URL", "postgres://127.0.0.1:5433/deckard_gem_test")
+  URL = ENV.fetch("DECKARD_TEST_DATABASE_URL", "postgres://127.0.0.1:5432/deckard_gem_test")
   DESTINATION_URL = ENV.fetch("DECKARD_TEST_DESTINATION_DATABASE_URL") do
     uri = URI(URL)
     uri.path = "#{uri.path}_destination"
