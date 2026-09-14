@@ -7,6 +7,13 @@ module Deckard
   class ModelConfig
     attr_reader :extra_associations, :natural_key_attributes, :omitted_fields, :omitted_associations
 
+    # One configuration per model class, created on first use. A subclass
+    # starts from its superclass's configuration.
+    def self.for(klass)
+      @configs ||= {}
+      @configs[klass] ||= new(klass.superclass.respond_to?(:replicate) ? self.for(klass.superclass) : nil)
+    end
+
     def initialize(parent = nil)
       @extra_associations = parent ? parent.extra_associations.dup : []
       @natural_key_attributes = parent ? parent.natural_key_attributes.dup : []
