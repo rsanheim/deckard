@@ -7,8 +7,11 @@ module Deckard
   class Loader
     attr_reader :counts
 
-    def initialize(input)
+    # An optional block is called with the running counts after every
+    # loaded replicant; the CLI uses it for a progress line.
+    def initialize(input, &after_load)
       @input = input
+      @after_load = after_load
       @id_map = {}
       @counts = Hash.new(0)
     end
@@ -62,6 +65,7 @@ module Deckard
       destination_id, _object = replicant_class(type).load_replicant(type, source_id, resolved)
       @id_map[[type, source_id]] = destination_id
       @counts[type] += 1
+      @after_load&.call(@counts)
     end
 
     def resolve_references(type, source_id, attributes)
