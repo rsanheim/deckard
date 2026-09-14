@@ -72,6 +72,24 @@ RSpec.describe "deckard CLI" do
     expect(io.eof?).to be(true)
   end
 
+  it "refuses to load into a production environment unless forced" do
+    dumped, _, _ = run_deckard("-r", fixture, "-d", "WIDGETS")
+
+    Tempfile.create("deckard-cli-out") do |out_file|
+      env = {"DECKARD_CLI_OUT" => out_file.path, "RAILS_ENV" => "production"}
+      _, err, status = run_deckard("-r", fixture, "-l", stdin: dumped, env: env)
+
+      expect(status.exitstatus).to eq(1)
+      expect(err).to include("refusing to load into a production environment")
+      expect(out_file.read).to be_empty
+
+      _, err, status = run_deckard("-r", fixture, "-l", "--force", stdin: dumped, env: env)
+
+      expect(status.exitstatus).to eq(0)
+      expect(err).to include("loaded 2 total objects")
+    end
+  end
+
   it "requires exactly one of -d or -l" do
     _, neither_err, neither = run_deckard("-r", fixture)
     _, both_err, both = run_deckard("-r", fixture, "-d", "WIDGETS", "-l")

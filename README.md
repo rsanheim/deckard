@@ -75,6 +75,9 @@ Load a stream from standard input:
 deckard -r ./config/environment -l < repos.dump
 ```
 
+Loading refuses to run when the application environment is production.
+Pass `--force` to override.
+
 ## Streaming over SSH
 
 The normal remote workflow is a plain Unix pipeline — SSH is the transport,

@@ -285,6 +285,11 @@ Repository       20
 User             89
 ```
 
+Loading refuses to run when the application environment is production, as
+reported by `Rails.env` or, without Rails, `RAILS_ENV` or `RACK_ENV`. The
+refusal is a `LoadError` raised before any frame is read. `--force`
+overrides it for the rare deliberate case.
+
 ### 6.5 Application output during a dump
 
 Deckard writes its binary stream to standard output and its own diagnostics
@@ -318,7 +323,7 @@ The required v1.0 CLI is deliberately small:
 
 ```text
 deckard -r FILE -d EXPRESSION_OR_FILE
-deckard -r FILE -l
+deckard -r FILE -l [--force]
 deckard --version
 deckard --help
 ```

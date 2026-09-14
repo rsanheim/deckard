@@ -34,7 +34,7 @@ module Deckard
       reserve_stdout if options[:dump]
       require File.expand_path(options[:require]) if options[:require]
 
-      options[:dump] ? dump(options[:dump]) : load_stream
+      options[:dump] ? dump(options[:dump]) : load_stream(options)
       0
     rescue Error => e
       @stderr.puts "#{e.class}: #{e.message}"
@@ -75,6 +75,7 @@ module Deckard
         opt :require, "Ruby file to require first (usually config/environment)", type: :string
         opt :dump, "Dump the result of a Ruby expression, or run a dump script file", type: :string
         opt :load, "Load a deckard stream from standard input"
+        opt :force, "Allow loading into a production environment"
       end
 
       unless !options[:dump].nil? ^ options[:load]
@@ -98,7 +99,11 @@ module Deckard
       Status.report("dumped", dumper.counts, @stderr)
     end
 
-    def load_stream
+    def load_stream(options)
+      if Deckard.production_environment? && !options[:force]
+        raise LoadError, "refusing to load into a production environment (pass --force to override)"
+      end
+
       @stdin.binmode if @stdin.respond_to?(:binmode)
       loader = Loader.new(@stdin)
       loader.load
