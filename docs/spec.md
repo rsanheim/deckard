@@ -217,7 +217,9 @@ The value returned by the expression may be:
 - An ActiveRecord relation.
 - An enumerable of dumpable objects.
 
-Deckard automatically calls `dump` on the expression result.
+Deckard automatically calls `dump` on the expression result. The expression
+is evaluated in the same context as a dump script (section 6.3), so it may
+also call `dump` itself.
 
 There is no `--root` concept or option.
 
@@ -261,7 +263,14 @@ When the argument to `-d` resolves to a file, Deckard evaluates that file in a s
 dump(object, options = {})
 ```
 
-A script may call `dump` as many times as necessary.
+A script may call `dump` as many times as necessary. Command-line arguments
+after the options are left in `ARGV` for the script:
+
+```bash
+deckard -r ./config/environment -d config/deckard/dump-repo.rb rtomayko/tilt
+```
+
+`-d -` reads the script from standard input instead of a file.
 
 A dump script is ordinary trusted Ruby. Deckard does not invent a separate configuration or query language for this use case.
 
@@ -284,6 +293,11 @@ IssueComment    427
 Repository       20
 User             89
 ```
+
+Loading refuses to run when the application environment is production, as
+reported by `Rails.env` or, without Rails, `RAILS_ENV` or `RACK_ENV`. The
+refusal is a `LoadError` raised before any frame is read. `--force`
+overrides it for the rare deliberate case.
 
 ### 6.5 Application output during a dump
 
@@ -317,8 +331,8 @@ SSH is only the transport. Deckard does not manage SSH connections or know anyth
 The required v1.0 CLI is deliberately small:
 
 ```text
-deckard -r FILE -d EXPRESSION_OR_FILE
-deckard -r FILE -l
+deckard -r FILE -d EXPRESSION_OR_FILE_OR_- [ARGS...]
+deckard -r FILE -l [--force]
 deckard --version
 deckard --help
 ```
@@ -1016,6 +1030,10 @@ retains its concise broken-pipe diagnostic.
 The data stream uses standard output.
 
 Human-readable status uses standard error.
+
+While standard error is a terminal, both dump and load keep a single
+progress line updated with the running object count. A pipe or log file
+receives only the completion report.
 
 Dump completion should show counts by type:
 
