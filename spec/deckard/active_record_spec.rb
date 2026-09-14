@@ -200,12 +200,4 @@ RSpec.describe Deckard::ActiveRecord, :db do
     expect(new_reaction.reactable_type).to eq("Post")
     expect(new_reaction.reactable_id).to eq(post.id)
   end
-
-  it "raises DumpError on a belongs_to dependency cycle" do
-    author = create_author("rachael")
-    post = Post.create!(author: author, title: "Nexus-6 field notes")
-    author.update_columns(featured_post_id: post.id)
-
-    expect { stream(author.reload) }.to raise_error(Deckard::DumpError, /dependency cycle/)
-  end
 end

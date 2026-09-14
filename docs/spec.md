@@ -683,6 +683,11 @@ Deckard relies on reference ordering rather than disabling PostgreSQL constraint
 
 Ordinary inverse-association cycles are stopped by the dumped-object identity set.
 
+A record reached again while its own dump is in progress (through a parent’s
+configured collection, for example) is emitted at that point once its own parents are
+in the stream, as in the original `replicate`; the outer traversal’s later write is a
+no-op.
+
 A graph requiring a record to reference another new record that cannot be emitted first is unsupported in v1.0 and produces an error.
 
 Deckard does not add placeholder rows, deferred repair passes, or automatic constraint disabling to accommodate such graphs.
