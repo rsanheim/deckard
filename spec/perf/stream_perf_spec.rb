@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Performance tests for the core stream (no database). Excluded from the
-# default suite; run with `DECKARD_PERF=1 bundle exec rspec spec/perf`.
+# default suite; run with `bundle exec rspec --tag perf spec/perf`.
 #
 # Fixture classes below implement the custom-object replicant protocol (see
 # spec/deckard/stream_spec.rb) but keep load_replicant near-zero-cost so

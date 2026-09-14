@@ -14,5 +14,5 @@ RSpec.configure do |config|
   end
 
   # Performance tests are slow and only run via `rake perf`.
-  config.filter_run_excluding perf: true unless ENV["DECKARD_PERF"]
+  config.filter_run_excluding perf: true
 end
