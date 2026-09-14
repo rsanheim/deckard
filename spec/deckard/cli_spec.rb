@@ -4,7 +4,6 @@ require "json"
 require "open3"
 require "stringio"
 require "tempfile"
-require "tmpdir"
 
 # Outside-in CLI specs: every example runs exe/deckard as a real subprocess
 # against the plain-Ruby models in spec/fixtures/cli_models.rb.
@@ -59,70 +58,18 @@ RSpec.describe "deckard CLI" do
     end
   end
 
-  it "atomically writes a clean stream to a file when the application logs to stdout" do
-    Dir.mktmpdir("deckard-output") do |directory|
-      output_path = File.join(directory, "widgets.dump")
+  it "keeps the stream clean when the application logs to stdout during boot" do
+    out, err, status = run_deckard("-r", fixture, "-d", "WIDGETS", env: {"DECKARD_BOOT_LOG" => "1"})
 
-      out, err, status = run_deckard(
-        "-r", fixture, "-d", "WIDGETS", "--output", output_path,
-        env: {"DECKARD_BOOT_LOG" => "1"}
-      )
-
-      expect(status.exitstatus).to eq(0)
-      expect(out).to eq("application booted\n")
-      expect(err).to include("dumped 2 total objects")
-      expect(File.stat(output_path).mode & 0o777).to eq(0o600)
-
-      io = StringIO.new(File.binread(output_path))
-      expect(Marshal.load(io)).to eq(Deckard::STREAM_HEADER)
-      expect(Marshal.load(io)).to eq(["CliWidget", 1, {"name" => "flux"}])
-      expect(Marshal.load(io)).to eq(["CliWidget", 2, {"name" => "capacitor"}])
-      expect(Marshal.load(io)).to eq(Deckard::STREAM_END)
-      expect(io.eof?).to be(true)
-    end
-  end
-
-  it "writes a clean stream to an inherited file descriptor while leaving application logs on stdout" do
-    Tempfile.create("deckard-fd-output") do |stream|
-      root = File.expand_path("../..", __dir__)
-      spawn_options = {3 => stream, :chdir => root}
-      out, err, status = Open3.capture3(
-        {"DECKARD_BOOT_LOG" => "1"},
-        RbConfig.ruby, "-Ilib", "exe/deckard", "-r", fixture, "-d", "WIDGETS", "--output-fd", "3",
-        **spawn_options
-      )
-
-      expect(status.exitstatus).to eq(0)
-      expect(out).to eq("application booted\n")
-      expect(err).to include("dumped 2 total objects")
-      stream.rewind
-      io = StringIO.new(stream.read)
-      expect(Marshal.load(io)).to eq(Deckard::STREAM_HEADER)
-      expect(Marshal.load(io)).to eq(["CliWidget", 1, {"name" => "flux"}])
-      expect(Marshal.load(io)).to eq(["CliWidget", 2, {"name" => "capacitor"}])
-      expect(Marshal.load(io)).to eq(Deckard::STREAM_END)
-      expect(io.eof?).to be(true)
-    end
-  end
-
-  it "leaves an existing output file unchanged when a dump fails" do
-    Dir.mktmpdir("deckard-output") do |directory|
-      output_path = File.join(directory, "widgets.dump")
-      File.write(output_path, "existing complete dump")
-
-      Tempfile.create(["failing_dump", ".rb"]) do |script|
-        script.write("dump WIDGETS.first\nraise Deckard::DumpError, 'deliberate failure'\n")
-        script.flush
-
-        _, err, status = run_deckard("-r", fixture, "-d", script.path, "--output", output_path)
-
-        expect(status.exitstatus).to eq(1)
-        expect(err).to include("deliberate failure")
-      end
-
-      expect(File.binread(output_path)).to eq("existing complete dump")
-      expect(Dir.children(directory)).to eq(["widgets.dump"])
-    end
+    expect(status.exitstatus).to eq(0)
+    expect(err).to include("application booted")
+    expect(err).to include("dumped 2 total objects")
+    io = StringIO.new(out)
+    expect(Marshal.load(io)).to eq(Deckard::STREAM_HEADER)
+    expect(Marshal.load(io)).to eq(["CliWidget", 1, {"name" => "flux"}])
+    expect(Marshal.load(io)).to eq(["CliWidget", 2, {"name" => "capacitor"}])
+    expect(Marshal.load(io)).to eq(Deckard::STREAM_END)
+    expect(io.eof?).to be(true)
   end
 
   it "requires exactly one of -d or -l" do
@@ -133,21 +80,6 @@ RSpec.describe "deckard CLI" do
     expect(neither_err).to include("exactly one of -d or -l")
     expect(both.exitstatus).not_to eq(0)
     expect(both_err).to include("exactly one of -d or -l")
-  end
-
-  it "validates dump output options before requiring the application" do
-    _, both_err, both = run_deckard(
-      "-r", "/missing/environment", "-d", "WIDGETS", "--output", "widgets.dump", "--output-fd", "3"
-    )
-    _, load_err, load = run_deckard("-r", "/missing/environment", "-l", "--output", "widgets.dump")
-    _, fd_err, fd = run_deckard("-r", "/missing/environment", "-d", "WIDGETS", "--output-fd", "2")
-
-    expect(both.exitstatus).not_to eq(0)
-    expect(both_err).to include("mutually exclusive")
-    expect(load.exitstatus).not_to eq(0)
-    expect(load_err).to include("only valid with --dump")
-    expect(fd.exitstatus).not_to eq(0)
-    expect(fd_err).to include("must be 3 or higher")
   end
 
   it "prints its version" do
