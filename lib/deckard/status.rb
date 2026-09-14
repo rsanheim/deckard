@@ -1,11 +1,19 @@
 # frozen_string_literal: true
 
 module Deckard
-  # Writes completion counts to standard error: a total line, then per-type
-  # counts sorted by type name. Standard output is never touched - it
-  # belongs to the stream.
+  # Writes progress and completion counts to standard error: a live counter
+  # while a terminal is attached, then a total line and per-type counts
+  # sorted by type name. Standard output is never touched - it belongs to
+  # the stream.
   class Status
+    def self.progress(action, counts, stderr)
+      return unless stderr.tty?
+
+      stderr.write "\r#{action} #{counts.values.sum} objects"
+    end
+
     def self.report(action, counts, stderr)
+      stderr.write "\r\e[K" if stderr.tty?
       stderr.puts "#{action} #{counts.values.sum} total objects:"
       return if counts.empty?
 

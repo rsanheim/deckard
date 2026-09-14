@@ -67,6 +67,11 @@ dump repo.issues
 deckard -d config/deckard/dump-stuff.rb > repos.dump
 ```
 
+Extra command-line arguments reach the script through `ARGV`, and `-d -`
+reads the script from standard input. An expression given to `-d` runs in
+the same context, so it may call `dump` directly. While stderr is a
+terminal, a live object counter shows progress on both ends of the pipe.
+
 ## Loading
 
 Load a stream from standard input:

@@ -2,6 +2,7 @@
 
 require "json"
 require "open3"
+require "pty"
 require "stringio"
 require "tempfile"
 
@@ -56,6 +57,58 @@ RSpec.describe "deckard CLI" do
       expect(status.exitstatus).to eq(0)
       expect(err).to include("dumped 2 total objects")
     end
+  end
+
+  it "lets an expression call dump itself" do
+    out, err, status = run_deckard("-r", fixture, "-d", "dump WIDGETS.first; nil")
+
+    expect(status.exitstatus).to eq(0)
+    expect(err).to include("dumped 1 total objects")
+    io = StringIO.new(out)
+    expect(Marshal.load(io)).to eq(Deckard::STREAM_HEADER)
+    expect(Marshal.load(io)).to eq(["CliWidget", 1, {"name" => "flux"}])
+    expect(Marshal.load(io)).to eq(Deckard::STREAM_END)
+  end
+
+  it "reads a dump script from stdin with -d -" do
+    _, err, status = run_deckard("-r", fixture, "-d", "-", stdin: "dump WIDGETS\n")
+
+    expect(status.exitstatus).to eq(0)
+    expect(err).to include("dumped 2 total objects")
+  end
+
+  it "passes extra command-line arguments to dump scripts through ARGV" do
+    Tempfile.create(["dump_script", ".rb"]) do |script|
+      script.write("dump WIDGETS.first(ARGV.size)\n$stderr.puts \"script argv: \#{ARGV.inspect}\"\n")
+      script.flush
+
+      _, err, status = run_deckard("-r", fixture, "-d", script.path, "alpha")
+
+      expect(status.exitstatus).to eq(0)
+      expect(err).to include('script argv: ["alpha"]')
+      expect(err).to include("dumped 1 total objects")
+    end
+  end
+
+  it "shows a live progress counter on stderr only when stderr is a terminal" do
+    _, plain_err, _ = run_deckard("-r", fixture, "-d", "WIDGETS")
+    expect(plain_err).not_to include("dumping")
+
+    root = File.expand_path("../..", __dir__)
+    command = "#{RbConfig.ruby} -Ilib exe/deckard -r #{fixture} -d WIDGETS > /dev/null"
+    tty_output = +""
+    PTY.spawn({}, "bash", "-c", command, chdir: root) do |reader, _writer, pid|
+      begin
+        reader.each_char { |char| tty_output << char }
+      rescue Errno::EIO
+        # the child closed its side of the terminal
+      end
+      Process.wait(pid)
+    end
+
+    expect(tty_output).to include("\rdumping 1 objects")
+    expect(tty_output).to include("\rdumping 2 objects")
+    expect(tty_output).to include("dumped 2 total objects")
   end
 
   it "keeps the stream clean when the application logs to stdout during boot" do
