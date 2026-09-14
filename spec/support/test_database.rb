@@ -15,8 +15,8 @@ module DeckardTestDatabase
   end
 
   TABLES = %w[bookmarks comments payments profiles posts authors cycle_as cycle_bs
-    reader_emails readers books libraries cargos ships employees artifacts
-    itineraries].freeze
+    reader_emails reader_notes readers books libraries cargos ships employees
+    artifacts itineraries].freeze
 
   class SourceRecord < ActiveRecord::Base
     self.abstract_class = true
@@ -166,6 +166,11 @@ module DeckardTestDatabase
         t.references :reader, null: false
         t.string :email, null: false
         t.string :label
+      end
+
+      create_table :reader_notes, force: :cascade do |t|
+        t.string :reader_login, null: false
+        t.string :body
       end
 
       create_table :libraries, force: :cascade do |t|

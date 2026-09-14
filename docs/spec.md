@@ -755,6 +755,11 @@ For example:
 
 The referenced object must appear earlier in the stream.
 
+Only foreign keys that hold the referenced record's primary key are encoded
+this way. A `belongs_to` whose `primary_key` option names another column
+(`belongs_to :account, primary_key: :login`) stores a natural value; the
+referenced record is still dumped first, but the field is copied as-is.
+
 When the destination loads the order, it replaces the reference tuple with the destination ID mapped from:
 
 ```ruby
