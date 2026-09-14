@@ -1127,6 +1127,9 @@ Responsibilities:
 - Install the `replicate` model method.
 - Implement ActiveRecord `dump_replicant`.
 - Implement ActiveRecord `load_replicant`.
+- Add nothing else to model classes: those three are the only methods
+  Deckard defines on `ActiveRecord::Base`. Traversal and loading are plain
+  objects inside the module, not private model methods.
 - Traverse supported reflections.
 - Encode foreign-key references.
 - Insert or update rows without callbacks.
