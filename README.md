@@ -127,29 +127,9 @@ class User < ActiveRecord::Base
     natural_key :login              # reuse an existing destination row
     omit_fields :encrypted_password # keep a field out of the stream
     omit_associations :profile      # do not traverse this association
-    scalar_reference :revision_id, to: "Revision"
   end
 end
 ```
-
-`scalar_reference` handles logical foreign-key fields that are not represented
-by ActiveRecord associations. Deckard dumps the referenced record first and
-rewrites the scalar through the same source-to-destination ID map used for
-association foreign keys. The target form looks up the source value by primary
-key. A resolver block supports unconventional or polymorphic references:
-
-```ruby
-replicate do
-  scalar_reference(:subject_id) do |record, source_id|
-    record.resolve_subject(source_id)
-  end
-end
-```
-
-A nil field stays nil. A non-nil field that cannot be resolved fails the dump
-instead of copying a potentially invalid source ID. `omit_fields` skips both
-the scalar field and its traversal. Like other references, unsupported cycles
-fail when the referenced record cannot be emitted first.
 
 A dump call can also add associations or omissions for just that dump:
 
