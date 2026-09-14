@@ -57,9 +57,14 @@ module Deckard
             "dependency cycle detected: #{self.class}(#{replicant_source_id}).#{reflection.name} " \
             "references #{referenced.class.name}(#{referenced_id}), which cannot be emitted first"
         end
-        unless omitted_fields.include?(foreign_key.to_sym)
-          attributes[foreign_key] = [:id, referenced.class.name, referenced_id]
-        end
+        next if omitted_fields.include?(foreign_key.to_sym)
+        # A belongs_to whose primary_key option targets a non-primary-key
+        # column (belongs_to :account, primary_key: :login) carries a natural
+        # value, not a source ID. It needs no remapping and must not be
+        # replaced with a destination primary key.
+        next unless reflection.association_primary_key(referenced.class) == referenced.class.primary_key
+
+        attributes[foreign_key] = [:id, referenced.class.name, referenced_id]
       end
     end
 

@@ -79,6 +79,12 @@ class ReaderEmail < ActiveRecord::Base
   end
 end
 
+# belongs_to through a non-primary-key column: reader_login holds a login,
+# not a reader id, so it must be copied as-is rather than remapped.
+class ReaderNote < ActiveRecord::Base
+  belongs_to :reader, primary_key: :login, foreign_key: :reader_login
+end
+
 class Library < ActiveRecord::Base
   has_many :books
 

@@ -22,6 +22,20 @@ RSpec.describe Deckard::ActiveRecord, :db do
     [io, dumper]
   end
 
+  it "copies a belongs_to foreign key that targets a non-primary-key column without remapping it" do
+    reader = Reader.create!(login: "rachael", email: "rachael@source.example")
+    note = ReaderNote.create!(reader: reader, body: "More human than human")
+
+    io, dumper = stream(note)
+    expect(dumper.counts).to eq("Reader" => 1, "ReaderNote" => 1)
+
+    Deckard::Loader.new(io).load
+
+    new_note = ReaderNote.where.not(id: note.id).sole
+    expect(new_note.reader_login).to eq("rachael")
+    expect(new_note.reader).to eq(reader)
+  end
+
   it "round trips a graph with destination-generated keys and remapped foreign keys" do
     author = create_author("Rachael")
     post = Post.create!(author: author, title: "Nexus-6 field notes")
