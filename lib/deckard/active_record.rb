@@ -34,6 +34,13 @@ module Deckard
     # associations configured via `replicate` or per-dump options. has_many
     # associations are never followed automatically.
     class Dump
+      # Stored generated columns (GENERATED ALWAYS AS ... STORED) are never
+      # dumped: the destination database computes them, and PostgreSQL
+      # rejects explicit inserts into them. Computed once per model class.
+      GENERATED_COLUMNS = Hash.new do |cache, model|
+        cache[model] = model.columns.select { |column| column.respond_to?(:virtual?) && column.virtual? }.map(&:name)
+      end
+
       def self.source_id(record)
         if record.class.primary_key.is_a?(Array)
           raise DumpError, "#{record.class} has a composite primary key, which deckard does not support"
@@ -44,6 +51,7 @@ module Deckard
       def initialize(record, dumper, options)
         @record = record
         @model = record.class
+        @source_id = self.class.source_id(record)
         @dumper = dumper
         @options = options
         config = ModelConfig.for(@model)
@@ -53,28 +61,17 @@ module Deckard
       end
 
       def call
-        @dumper.once(@model.name, source_id) do
+        @dumper.once(@model.name, @source_id) do
           validate_selected_associations!
-          attributes = @record.attributes.except(*generated_columns, *@omitted_fields.map(&:to_s))
+          attributes = @record.attributes.except(*GENERATED_COLUMNS[@model], *@omitted_fields.map(&:to_s))
           dump_belongs_to(attributes)
-          @dumper.write(@model.name, source_id, attributes, @record)
+          @dumper.write(@model.name, @source_id, attributes, @record)
           dump_has_one
           dump_configured
         end
       end
 
       private
-
-      def source_id
-        self.class.source_id(@record)
-      end
-
-      # Stored generated columns (GENERATED ALWAYS AS ... STORED) are never
-      # dumped: the destination database computes them, and PostgreSQL
-      # rejects explicit inserts into them.
-      def generated_columns
-        @model.columns.select { |column| column.respond_to?(:virtual?) && column.virtual? }.map(&:name)
-      end
 
       def dump_belongs_to(attributes)
         @model.reflect_on_all_associations(:belongs_to).each do |reflection|
@@ -89,7 +86,7 @@ module Deckard
           referenced_id = self.class.source_id(referenced)
           unless @dumper.dumped?(referenced.class.name, referenced_id)
             raise DumpError,
-              "dependency cycle detected: #{@model}(#{source_id}).#{reflection.name} " \
+              "dependency cycle detected: #{@model}(#{@source_id}).#{reflection.name} " \
               "references #{referenced.class.name}(#{referenced_id}), which cannot be emitted first"
           end
           next if @omitted_fields.include?(foreign_key.to_sym)
@@ -149,14 +146,14 @@ module Deckard
       def validate_association!(reflection)
         if reflection.macro == :has_and_belongs_to_many
           raise UnsupportedAssociation,
-            "#{@model}(#{source_id}).#{reflection.name} is a has_and_belongs_to_many association, " \
+            "#{@model}(#{@source_id}).#{reflection.name} is a has_and_belongs_to_many association, " \
             "which deckard does not support; use an explicit join model and replicate that association instead"
         end
 
         return unless reflection.macro == :has_many && reflection.through_reflection
 
         raise UnsupportedAssociation,
-          "#{@model}(#{source_id}).#{reflection.name} is a has_many :through association, " \
+          "#{@model}(#{@source_id}).#{reflection.name} is a has_many :through association, " \
           "which deckard does not support; replicate :#{reflection.through_reflection.name} instead"
       end
 

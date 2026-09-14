@@ -8,7 +8,9 @@ module Deckard
     attr_reader :extra_associations, :natural_key_attributes, :omitted_fields, :omitted_associations
 
     # One configuration per model class, created on first use. A subclass
-    # starts from its superclass's configuration.
+    # starts from its superclass's configuration; the chain stops at the
+    # first ancestor without the `replicate` DSL, which is ActiveRecord::Base's
+    # own superclass.
     def self.for(klass)
       @configs ||= {}
       @configs[klass] ||= new(klass.superclass.respond_to?(:replicate) ? self.for(klass.superclass) : nil)
