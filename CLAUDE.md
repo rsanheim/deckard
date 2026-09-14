@@ -47,18 +47,18 @@ operator would, through real apps and a real pipe.
 ## Architecture (from the spec)
 
 The operating model is a Unix pipeline: dump on the source (`deckard -r ./config/environment -d "User.find(1)"`),
-stream versioned Marshal frames over a selected output channel, load on the destination (`deckard -r ./config/environment -l`)
+stream versioned Marshal frames over stdout, load on the destination (`deckard -r ./config/environment -l`)
 inside one transaction that commits only after a valid end marker. Primary keys are remapped: the destination
 generates new IDs and foreign keys are rewritten via a source-to-destination ID map.
 
 Planned internal structure (spec section 16) — six small classes, no adapter frameworks or registries:
 
-- `Deckard::CLI` — parse `-r`/`-d`/`-l`, boot the app, wire stdin and safe dump output channels
+- `Deckard::CLI` — parse `-r`/`-d`/`-l`, reserve stdout for the stream, boot the app, wire stdin/stdout
 - `Deckard::Dumper` — dedupe by `[type, source_id]`, call `dump_replicant`, write frames
 - `Deckard::Loader` — read frames incrementally, resolve `[:id, "User", 1234]` reference tuples, call `load_replicant`, manage the transaction
 - `Deckard::ModelConfig` — backs the `replicate do ... end` model DSL (associations, natural keys, omissions)
 - `Deckard::ActiveRecord` — traversal (belongs_to and has_one automatic; has_many opt-in), callback/validation-free inserts via PostgreSQL `RETURNING`. Models gain only `replicate`, `dump_replicant`, and `load_replicant`; everything else stays in plain objects
-- `Deckard::Status` — counts by type on stderr; the selected data channel carries only the stream
+- `Deckard::Status` — counts by type on stderr; stdout carries only the stream
 
 Key design constraints to preserve:
 

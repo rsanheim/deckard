@@ -6,8 +6,11 @@ module Deckard
   class Dumper
     attr_reader :counts
 
-    def initialize(output)
+    # An optional block is called with the running counts after every
+    # written replicant; the CLI uses it for a progress line.
+    def initialize(output, &after_write)
       @output = output
+      @after_write = after_write
       @dumped = Set.new
       @in_progress = Set.new
       @counts = Hash.new(0)
@@ -60,6 +63,7 @@ module Deckard
       @dumped.add([type, id])
       write_frame([type, id, attributes])
       @counts[type] += 1
+      @after_write&.call(@counts)
     end
 
     # Write the successful-end marker. A stream without it is treated as

@@ -26,7 +26,7 @@ Deckard is a direct resurrection of the original `replicate` gem’s operating m
 1. Boot the source Rails application.
 2. Evaluate a Ruby expression or dump script.
 3. Traverse the selected objects and associations.
-4. Stream each object to the selected binary output channel as it is discovered.
+4. Stream each object to standard output as it is discovered.
 5. Pipe that stream to Deckard in the destination Rails application.
 6. Insert each object with a new local primary key.
 7. Rewrite foreign keys using a source-to-destination ID map.
@@ -217,7 +217,9 @@ The value returned by the expression may be:
 - An ActiveRecord relation.
 - An enumerable of dumpable objects.
 
-Deckard automatically calls `dump` on the expression result.
+Deckard automatically calls `dump` on the expression result. The expression
+is evaluated in the same context as a dump script (section 6.3), so it may
+also call `dump` itself.
 
 There is no `--root` concept or option.
 
@@ -261,7 +263,14 @@ When the argument to `-d` resolves to a file, Deckard evaluates that file in a s
 dump(object, options = {})
 ```
 
-A script may call `dump` as many times as necessary.
+A script may call `dump` as many times as necessary. Command-line arguments
+after the options are left in `ARGV` for the script:
+
+```bash
+deckard -r ./config/environment -d config/deckard/dump-repo.rb rtomayko/tilt
+```
+
+`-d -` reads the script from standard input instead of a file.
 
 A dump script is ordinary trusted Ruby. Deckard does not invent a separate configuration or query language for this use case.
 
@@ -285,34 +294,24 @@ Repository       20
 User             89
 ```
 
-### 6.5 Safe dump output channels
+Loading refuses to run when the application environment is production, as
+reported by `Rails.env` or, without Rails, `RAILS_ENV` or `RACK_ENV`. The
+refusal is a `LoadError` raised before any frame is read. `--force`
+overrides it for the rare deliberate case.
 
-By default, Deckard writes its binary stream to standard output and its own
-diagnostics to standard error. Requiring an application runs arbitrary boot
-code, however, and Deckard cannot prevent that code from writing to stdout.
-Applications that may log during boot must select a separate data channel.
+### 6.5 Application output during a dump
 
-`--output FILE` writes to a private `0600` temporary file in the destination
-directory and atomically renames it after the successful-end marker is flushed:
+Deckard writes its binary stream to standard output and its own diagnostics
+to standard error. Requiring an application runs arbitrary boot code, and
+that code may print to stdout: a logger configured with `STDOUT`, a `puts` in
+an initializer, or a child process.
 
-```bash
-deckard -r ./config/environment -d "User.find(1)" --output user.dump
-```
-
-Readers never observe a partial target, and a normal dump failure leaves an
-existing target unchanged. This is an atomic-visibility guarantee, not a
-power-loss durability guarantee. Existing symlinks and non-regular targets are
-rejected.
-
-`--output-fd N` streams to an inherited file descriptor numbered 3 or higher:
-
-```bash
-deckard -r ./config/environment -d "User.find(1)" --output-fd 3
-```
-
-Deckard flushes but does not close the caller-owned descriptor. The option
-preserves incremental streaming when the invoking shell separates application
-stdout from the binary transport.
+Before requiring the application in dump mode, Deckard duplicates the
+original standard output for its own use and reopens file descriptor 1 onto
+standard error. Everything the process or its children subsequently write to
+stdout lands on stderr, and only the stream reaches the pipe or file. The
+operator does nothing to opt in; `> user.dump` and `| deckard -l` work as
+written regardless of what the application prints.
 
 ### 6.6 Direct SSH streaming
 
@@ -327,22 +326,13 @@ ssh example.org "$remote_command" \
 
 SSH is only the transport. Deckard does not manage SSH connections or know anything about the remote host.
 
-If the remote application may log to stdout, the shell reserves the transport
-as descriptor 3 before redirecting stdout to stderr:
-
-```bash
-ssh example.org \
-  "deckard -r /app/config/environment -d 'User.find(1234)' --output-fd 3 3>&1 1>&2" \
-| deckard -r ./config/environment -l
-```
-
 ### 6.7 CLI scope
 
 The required v1.0 CLI is deliberately small:
 
 ```text
-deckard -r FILE -d EXPRESSION_OR_FILE [--output FILE | --output-fd N]
-deckard -r FILE -l
+deckard -r FILE -d EXPRESSION_OR_FILE_OR_- [ARGS...]
+deckard -r FILE -l [--force]
 deckard --version
 deckard --help
 ```
@@ -1037,15 +1027,18 @@ Normal errors must not print complete attribute hashes or sensitive production v
 
 All failures return a nonzero process status.
 
-`OutputError` reports invalid output targets and failures writing or publishing
-a dump stream. A closed output pipe retains its concise broken-pipe diagnostic.
+`OutputError` reports failures writing the dump stream. A closed output pipe
+retains its concise broken-pipe diagnostic.
 
 ## 15. Diagnostics
 
-The data stream uses standard output by default, an atomic file with
-`--output`, or an inherited descriptor with `--output-fd`.
+The data stream uses standard output.
 
 Human-readable status uses standard error.
+
+While standard error is a terminal, both dump and load keep a single
+progress line updated with the running object count. A pipe or log file
+receives only the completion report.
 
 Dump completion should show counts by type:
 
@@ -1071,10 +1064,9 @@ Repository       20
 User             89
 ```
 
-Deckard writes only binary frames to the selected data channel. It does not
-capture or redirect output produced by application boot code. The default
-output should remain useful in an SSH pipeline without becoming a logging
-subsystem.
+Application output that would otherwise reach stdout is redirected to stderr
+(section 6.5). The default output should remain useful in an SSH pipeline
+without becoming a logging subsystem.
 
 ## 16. Proposed internal structure
 
@@ -1095,11 +1087,11 @@ Responsibilities:
 
 ### `Deckard::CLI`
 
-- Parse `-r`, `-d`, `-l`, and dump output options.
+- Parse `-r`, `-d`, and `-l`.
+- Reserve standard output for the stream before requiring the application.
 - Require the application environment.
 - Evaluate dump expressions and scripts.
-- Connect standard input and the selected output channel to the dumper or loader.
-- Atomically publish file dumps and preserve caller-owned file descriptors.
+- Connect standard input and output to the dumper or loader.
 - Return useful process statuses.
 
 ### `Deckard::Dumper`
@@ -1162,11 +1154,10 @@ Deckard v1.0 must maintain these invariants:
 7. Multiple references to one source object resolve to one destination object.
 8. ActiveRecord validations and callbacks do not run in the default loader.
 9. Existing local records are changed only when a natural key explicitly matches them.
-10. Deckard writes only stream frames to the selected data channel.
+10. Standard output from dump mode contains only the stream.
 11. A stream without a successful-end marker does not commit.
 12. The loader never silently leaves an unresolved source foreign key in a destination row.
 13. Unsupported behavior raises rather than being approximated.
-14. A file dump becomes visible at its target only after the successful-end marker is written.
 
 ## 18. Acceptance criteria
 
@@ -1291,9 +1282,9 @@ HABTM associations, through associations, composite primary keys, and unsupporte
 
 ### 18.17 Boot-log-safe output
 
-`--output FILE` produces an atomically published stream, and `--output-fd N`
-produces an incremental stream on a caller-owned descriptor, even when
-application boot code writes to stdout.
+A dump whose application prints to stdout while booting still produces a
+valid stream on standard output; the application's output appears on
+standard error.
 
 ## 19. Implementation order
 
@@ -1379,7 +1370,7 @@ Then add:
 - Dump-script evaluation.
 - Standard-error status.
 - Pipe-failure handling.
-- Atomic file output and inherited file-descriptor output.
+- Standard output reservation for the stream.
 - SSH workflow documentation.
 
 ### Phase 6: Hardening and release
@@ -1438,7 +1429,7 @@ Deckard v1.0 will:
 - Expose only `associations`, `natural_key`, `omit_fields`, and `omit_associations` inside that block.
 - Retain dump expressions and ordinary Ruby dump scripts.
 - Retain `dump_replicant` and `load_replicant`.
-- Stream directly over standard input and a selected output channel.
+- Stream directly over standard input and output.
 - Use a versioned Marshal stream.
 - Remap IDs by default.
 - Support ActiveRecord 8+.
