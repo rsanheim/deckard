@@ -32,7 +32,9 @@ module Deckard
     # Dumps one record and its dependencies. Traversal order: belongs_to
     # associations, the record itself, has_one associations, then
     # associations configured via `replicate` or per-dump options. has_many
-    # associations are never followed automatically.
+    # associations are never followed automatically. Per-dump options apply
+    # to the record handed to Dumper#dump only; records reached from it are
+    # dumped with their own model configuration.
     class Dump
       # Stored generated columns (GENERATED ALWAYS AS ... STORED) are never
       # dumped: the destination database computes them, and PostgreSQL
@@ -82,7 +84,7 @@ module Deckard
           referenced = @record.public_send(reflection.name)
           next if referenced.nil?
 
-          @dumper.dump(referenced, @options)
+          @dumper.dump(referenced)
           referenced_id = self.class.source_id(referenced)
           unless @dumper.dumped?(referenced.class.name, referenced_id)
             raise DumpError,
@@ -119,13 +121,12 @@ module Deckard
         @model.reflect_on_all_associations(:has_one).each do |reflection|
           next if @omitted_associations.include?(reflection.name)
           dependent = @record.public_send(reflection.name)
-          @dumper.dump(dependent, @options) if dependent
+          @dumper.dump(dependent) if dependent
         end
       end
 
-      # Associations named in the model's `replicate` block must exist; names
-      # passed per-dump are skipped on classes that lack them, because options
-      # cascade to every record reached in the traversal.
+      # Every selected association must exist on this model: those named in
+      # the model's `replicate` block, and those passed for this dump call.
       def validate_selected_associations!
         @configured_associations.each do |name|
           next if @omitted_associations.include?(name)
@@ -139,7 +140,10 @@ module Deckard
 
         per_dump_associations.each do |name|
           reflection = @model.reflect_on_association(name)
-          validate_association!(reflection) if reflection
+          unless reflection
+            raise DumpError, "#{@model} has no #{name.inspect} association to dump"
+          end
+          validate_association!(reflection)
         end
       end
 
@@ -169,15 +173,12 @@ module Deckard
           dump_association(name)
         end
 
-        per_dump_associations.each do |name|
-          next unless @model.reflect_on_association(name)
-          dump_association(name)
-        end
+        per_dump_associations.each { |name| dump_association(name) }
       end
 
       def dump_association(name)
         associated = @record.public_send(name)
-        @dumper.dump(associated, @options) if associated
+        @dumper.dump(associated) if associated
       end
     end
 

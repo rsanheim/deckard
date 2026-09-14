@@ -115,13 +115,19 @@ class User < ActiveRecord::Base
 end
 ```
 
-A dump call can also add associations or omissions for just that dump:
+A dump call can also add associations or omissions for just that dump. They apply
+to the objects passed to that call only; records reached from them are dumped with
+their own model configuration. Express a deeper cascade with further `dump` calls,
+and each record still lands in the stream once:
 
 ```ruby
 dump User.all,
   associations: [:email_addresses],
   omit_fields: [:created_at],
   omit_associations: [:profile]
+
+dump user, associations: [:posts]
+dump user.posts, associations: [:comments]
 ```
 
 ## Security

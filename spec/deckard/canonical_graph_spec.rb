@@ -99,16 +99,18 @@ RSpec.describe "canonical forum graph", db: :multiple do
   end
 
   it "clones an author's forum activity into another database" do
-    pending "per-dump association names cascade to every class that has them (posts reaches Category, " \
-      "reactions reaches every Author), and the traversal then reports a dependency cycle"
     source_author = Author.find_by!(username: "rachael")
     source_snapshot = author_snapshot(source_author)
     stream, dumper = dump(source_author, associations: %i[posts author_emails reactions donations attachments])
 
-    expect(dumper.counts).to include("Author" => 3, "Post" => 4, "Comment" => 6)
+    # Her own posts plus the one she reacted to; every comment under them.
+    expect(dumper.counts).to include("Author" => 3, "Post" => 3, "Comment" => 5, "AttachmentVariant" => 2)
 
     DeckardTestDatabase.with_destination do
-      Deckard::Loader.new(stream).load
+      loader = Deckard::Loader.new(stream)
+      loader.load
+
+      expect(loader.counts).to eq(dumper.counts)
       expect(author_snapshot(Author.find_by!(username: "rachael"))).to eq(source_snapshot)
     end
   end

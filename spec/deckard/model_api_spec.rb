@@ -74,16 +74,23 @@ RSpec.describe "replicate model DSL", :db do
     expect { stream(broken) }.to raise_error(Deckard::DumpError, /moderators/)
   end
 
-  it "includes per-dump associations, skipping classes that lack them" do
+  it "applies per-dump associations to the dumped object only" do
+    rachael = create_author("rachael")
+    deckard = create_author("deckard")
+    post = Post.create!(author: rachael, title: "Nexus-6 field notes")
+    Donation.create!(author: deckard, post: post, amount: 5)
+
+    # Post has donations too, but the option applies to rachael alone.
+    _, dumper = stream(rachael, associations: [:posts, :donations])
+
+    expect(dumper.counts).to eq("Author" => 1, "Post" => 1)
+  end
+
+  it "raises DumpError when a per-dump association is missing on the dumped object" do
     author = create_author("rachael")
-    Profile.create!(author: author, bio: "More human than human")
-    Post.create!(author: author, title: "Nexus-6 field notes")
 
-    # :posts cascades to Profile too, which has no such association - that
-    # must be skipped, not raised.
-    _, dumper = stream(author, associations: [:posts])
-
-    expect(dumper.counts).to eq("Author" => 1, "Profile" => 1, "Post" => 1)
+    expect { stream(author, associations: [:variants]) }
+      .to raise_error(Deckard::DumpError, /Author has no :variants association/)
   end
 
   it "applies per-dump field and association omissions independently" do
