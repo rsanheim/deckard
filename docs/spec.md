@@ -134,7 +134,6 @@ The original README’s small configuration surface remains available:
 - Natural keys.
 - Explicit field omissions and association omissions.
 - Per-`dump` association and omission options.
-- Scalar-reference remapping for logical foreign keys without associations.
 - `dump_replicant` and `load_replicant` hooks.
 
 These features should remain small and direct rather than becoming a generalized plugin or policy framework.
@@ -360,14 +359,13 @@ replicate do
 end
 ```
 
-The block provides five methods in v1.0:
+The block provides four methods in v1.0:
 
 ```ruby
 associations
 natural_key
 omit_fields
 omit_associations
-scalar_reference
 ```
 
 There is no `Deckard.configure` block and no separate model concern that applications must include.
@@ -589,54 +587,12 @@ configuration. These keys are interpreted by ActiveRecord's `dump_replicant`
 implementation. The generic `dump(object, options = {})` API remains unchanged and
 passes its options through to each replicant implementation.
 
-### 7.7 Scalar references
-
-Some schemas store a logical foreign key without declaring an ActiveRecord
-association. Such fields require explicit remapping so a destination row never
-retains a source primary key.
-
-For a conventional primary-key lookup, name a target class or deferred class
-name:
-
-```ruby
-class Snapshot < ActiveRecord::Base
-  replicate do
-    scalar_reference :current_revision_id, to: "Revision"
-  end
-end
-```
-
-For polymorphic or unconventional lookup rules, provide a resolver block. The
-block receives the owning record and the raw source value and must return the
-referenced source record:
-
-```ruby
-replicate do
-  scalar_reference(:subject_id) do |record, source_id|
-    record.resolve_subject(source_id)
-  end
-end
-```
-
-Exactly one of `to:` or a resolver block is required. At dump time Deckard:
-
-1. Leaves a nil scalar value nil without invoking the resolver.
-2. Resolves and emits the referenced record before its owner.
-3. Encodes the field as the existing `[:id, type, source_id]` tuple.
-4. Fails if a non-nil value does not resolve or cannot be emitted first.
-
-This uses the existing stream protocol and destination ID map; it does not
-change the stream version. `omit_fields` skips both the scalar field and its
-otherwise unnecessary traversal. Scalar-reference cycles have the same
-unsupported ordering semantics as association cycles.
-
-### 7.8 Configuration inheritance
+### 7.7 Configuration inheritance
 
 Deckard model configuration follows ActiveRecord inheritance:
 
 - A subclass begins with its superclass’s configuration.
 - Additional associations, field omissions, and association omissions are additive.
-- Scalar references are inherited and may be replaced by attribute name.
 - A subclass may define its own natural key.
 - Mutating a subclass’s configuration must not mutate the superclass’s configuration.
 
@@ -648,7 +604,6 @@ The default ActiveRecord traversal order is:
 
 ```text
 belongs_to associations
-scalar references
 current record
 has_one associations
 explicitly configured associations
@@ -1167,8 +1122,7 @@ Responsibilities:
 - Store associations.
 - Store the optional natural key.
 - Store field omissions and association omissions separately.
-- Store scalar-reference resolver definitions.
-- Implement inheritance without shared mutable collections.
+- Implement inheritance without shared mutable arrays.
 - Back the `replicate do ... end` model DSL.
 
 ### `Deckard::ActiveRecord`
@@ -1178,7 +1132,6 @@ Responsibilities:
 - Implement ActiveRecord `load_replicant`.
 - Traverse supported reflections.
 - Encode foreign-key references.
-- Resolve and encode configured scalar references.
 - Insert or update rows without callbacks.
 
 ### `Deckard::Status`
@@ -1328,19 +1281,7 @@ A malformed stream, truncated stream, unresolved reference, or PostgreSQL insert
 
 HABTM associations, through associations, composite primary keys, and unsupported dependency cycles produce specific errors rather than corrupted data.
 
-### 18.17 Scalar-reference remapping
-
-```ruby
-replicate do
-  scalar_reference :current_revision_id, to: "Revision"
-end
-```
-
-emits the referenced record first and maps the scalar field to its destination
-ID. A resolver block supports nonconventional lookup, while missing targets and
-unsupported cycles fail without preserving source IDs.
-
-### 18.18 Boot-log-safe output
+### 18.17 Boot-log-safe output
 
 `--output FILE` produces an atomically published stream, and `--output-fd N`
 produces an incremental stream on a caller-owned descriptor, even when
@@ -1403,7 +1344,6 @@ replicate do
   natural_key
   omit_fields
   omit_associations
-  scalar_reference
 end
 ```
 
@@ -1487,7 +1427,7 @@ Deckard v1.0 will:
 - Use `deckard` as the gem and executable name.
 - Use `Deckard` as the Ruby namespace.
 - Use `replicate do ... end` for namespaced model configuration.
-- Expose only `associations`, `natural_key`, `omit_fields`, `omit_associations`, and `scalar_reference` inside that block.
+- Expose only `associations`, `natural_key`, `omit_fields`, and `omit_associations` inside that block.
 - Retain dump expressions and ordinary Ruby dump scripts.
 - Retain `dump_replicant` and `load_replicant`.
 - Stream directly over standard input and a selected output channel.

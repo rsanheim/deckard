@@ -93,17 +93,6 @@ end
 
 class Book < ActiveRecord::Base
   belongs_to :library, optional: true
-
-  replicate do
-    scalar_reference :related_book_id, to: "Book"
-    scalar_reference(:resolved_book_id) { |_record, source_id| Book.find_by(id: source_id) }
-  end
-end
-
-class BrokenReferenceBook < Book
-  replicate do
-    scalar_reference(:resolved_book_id) { raise "" }
-  end
 end
 
 # Deliberately broken: its replicate block names an association that does

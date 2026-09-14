@@ -32,7 +32,7 @@ Two tiers with a hard boundary:
 
 - Unit/integration (`spec/`): a normal gem suite, runs on the host via `bundle exec rake`.
   The ActiveRecord specs use a real local PostgreSQL
-  (default `postgres://127.0.0.1:5433/deckard_gem_test`, override with
+  (default `postgres://127.0.0.1:5432/deckard_gem_test`, override with
   `DECKARD_TEST_DATABASE_URL`) and fail when no server is reachable.
 - E2E / full-stack (`harness/`): a real Rails 8.1 app streamed between two containers,
   entirely inside docker compose — source app + source PostgreSQL, destination app +
@@ -56,7 +56,7 @@ Planned internal structure (spec section 16) — six small classes, no adapter f
 - `Deckard::CLI` — parse `-r`/`-d`/`-l`, boot the app, wire stdin and safe dump output channels
 - `Deckard::Dumper` — dedupe by `[type, source_id]`, call `dump_replicant`, write frames
 - `Deckard::Loader` — read frames incrementally, resolve `[:id, "User", 1234]` reference tuples, call `load_replicant`, manage the transaction
-- `Deckard::ModelConfig` — backs the `replicate do ... end` model DSL (associations, natural keys, omissions, scalar references)
+- `Deckard::ModelConfig` — backs the `replicate do ... end` model DSL (associations, natural keys, omissions)
 - `Deckard::ActiveRecord` — traversal (belongs_to and has_one automatic; has_many opt-in), callback/validation-free inserts via PostgreSQL `RETURNING`
 - `Deckard::Status` — counts by type on stderr; the selected data channel carries only the stream
 

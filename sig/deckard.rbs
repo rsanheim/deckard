@@ -1,10 +1,4 @@
 module Deckard
   VERSION: String
-
-  class ModelConfig
-    attr_reader scalar_references: Hash[Symbol, untyped]
-
-    def scalar_reference: (Symbol | String attribute, to: untyped) -> untyped
-                        | (Symbol | String attribute) { (untyped, untyped) -> untyped } -> untyped
-  end
+  # See the writing guide of rbs: https://github.com/ruby/rbs#guides
 end
