@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "database_cleaner/active_record"
-require_relative "test_database"
+require_relative "database"
 
 # Cleans the test database around each `:db`-tagged example. Transactions
 # are the default (fastest); tag an example `db: :truncation` when its

@@ -115,13 +115,19 @@ class User < ActiveRecord::Base
 end
 ```
 
-A dump call can also add associations or omissions for just that dump:
+A dump call can also add associations or omissions for just that dump. They apply
+to the objects passed to that call only; records reached from them are dumped with
+their own model configuration. Express a deeper cascade with further `dump` calls,
+and each record still lands in the stream once:
 
 ```ruby
 dump User.all,
   associations: [:email_addresses],
   omit_fields: [:created_at],
   omit_associations: [:profile]
+
+dump user, associations: [:posts]
+dump user.posts, associations: [:comments]
 ```
 
 ## Security
@@ -136,7 +142,11 @@ plaintext and are re-encrypted with the destination's keys on load.
 ## Development
 
 `bundle exec rake` runs the unit/integration suite (specs against a local
-PostgreSQL 18, lint, and a style ratchet). `bundle exec rake e2e` runs the
+PostgreSQL 18, lint, and a style ratchet). The specs run against a small forum
+schema managed with ActiveRecord's own migration and schema tooling under
+`spec/db`; `bundle exec rake -T db` lists the database tasks, and
+`bundle exec rake db:reset` rebuilds and seeds the test databases from scratch.
+`bundle exec rake e2e` runs the
 full-stack test: a real Rails app streaming between two docker compose
 containers. `bundle exec rake test-all` runs both host-side checks and the
 full-stack test. See `docs/spec.md` for the v1.0 specification.

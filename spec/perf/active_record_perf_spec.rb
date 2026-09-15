@@ -2,7 +2,7 @@
 
 require "stringio"
 require_relative "../support/database_cleaner"
-require_relative "../support/test_models"
+require_relative "../support/forum_models"
 
 # Performance tests for the ActiveRecord replicant path (real PostgreSQL).
 # Excluded from the default suite; run with
@@ -15,7 +15,7 @@ require_relative "../support/test_models"
 # acceptable for v1.0" - so load bounds here are deliberately loose.
 RSpec.describe "Deckard ActiveRecord performance", perf: true, db: :truncation do
   def create_author(name)
-    Author.create!(name: name)
+    Author.create!(username: name.downcase, name: name)
   end
 
   # Inserts post_count posts under author, each with comments_per_post

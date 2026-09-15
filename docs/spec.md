@@ -442,7 +442,18 @@ A dump script may add associations for a particular call:
 dump User.all, associations: [:email_addresses]
 ```
 
-These associations are combined with those declared in the model’s `replicate` block.
+These associations are combined with those declared in the model’s `replicate` block,
+for the objects passed to that `dump` call only. Records reached through the traversal
+are dumped with their own model configuration and no per-dump options, as in the
+original `replicate`. A dump script expresses a deeper cascade with further `dump`
+calls; the identity set keeps every record in the stream once:
+
+```ruby
+dump user, associations: [:posts]
+dump user.posts, associations: [:comments]
+```
+
+Each per-dump association must exist on the dumped object’s class, or the dump raises.
 
 This remains a Ruby API used by dump scripts. It does not become a CLI option.
 
@@ -573,9 +584,10 @@ dump User.all,
 ```
 
 Per-dump field and association omissions are combined with the corresponding model
-configuration. These keys are interpreted by ActiveRecord's `dump_replicant`
+configuration and, like per-dump associations, apply only to the objects passed to that
+`dump` call. These keys are interpreted by ActiveRecord's `dump_replicant`
 implementation. The generic `dump(object, options = {})` API remains unchanged and
-passes its options through to each replicant implementation.
+passes its options to each root object's replicant implementation.
 
 ### 7.7 Configuration inheritance
 
@@ -670,6 +682,11 @@ Deckard does not maintain a second graph of visited association edges solely to 
 Deckard relies on reference ordering rather than disabling PostgreSQL constraints.
 
 Ordinary inverse-association cycles are stopped by the dumped-object identity set.
+
+A record reached again while its own dump is in progress (through a parent’s
+configured collection, for example) is emitted at that point once its own parents are
+in the stream, as in the original `replicate`; the outer traversal’s later write is a
+no-op.
 
 A graph requiring a record to reference another new record that cannot be emitted first is unsupported in v1.0 and produces an error.
 

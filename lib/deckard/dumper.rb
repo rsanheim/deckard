@@ -12,7 +12,7 @@ module Deckard
       @output = output
       @after_write = after_write
       @dumped = Set.new
-      @in_progress = Set.new
+      @in_progress = Hash.new(0)
       @counts = Hash.new(0)
       write_frame(STREAM_HEADER)
     end
@@ -34,20 +34,24 @@ module Deckard
       end
     end
 
-    # Runs the block once per [type, id]. Skipped when that identity is
-    # already written, or when its dump is in progress higher up the stack -
-    # a traversal loop (e.g. record -> parent -> parent's collection ->
-    # record) that the in-progress caller finishes writing itself. Callers
-    # that require the identity to be emitted first check #dumped? after.
+    # Runs the block for a [type, id] that is not yet written. A record
+    # reached again while its dump is in progress higher up the stack (e.g.
+    # record -> parent -> parent's collection -> child -> record) is entered
+    # a second time so it can be written as soon as its own parents are; the
+    # outer call's later write is then a no-op. A third entry can only happen
+    # while the second is still walking the record's belongs_to parents,
+    # which means those parents lead back to the record: a true cycle. That
+    # entry is skipped, and callers that require the identity to be emitted
+    # first check #dumped? after and raise.
     def once(type, id)
       key = [type.to_s, id]
-      return if @dumped.include?(key) || @in_progress.include?(key)
+      return if @dumped.include?(key) || @in_progress[key] >= 2
 
-      @in_progress.add(key)
+      @in_progress[key] += 1
       begin
         yield
       ensure
-        @in_progress.delete(key)
+        @in_progress[key] -= 1
       end
     end
 

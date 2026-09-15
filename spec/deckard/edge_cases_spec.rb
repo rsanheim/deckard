@@ -1,13 +1,18 @@
 # frozen_string_literal: true
 
+require "bigdecimal"
 require "securerandom"
 require "stringio"
 require_relative "../support/database_cleaner"
-require_relative "../support/test_models"
+require_relative "../support/forum_models"
 
 # Coverage of the ActiveRecord shapes spec section 13 supports (and the ones
 # it requires to fail clearly), beyond the conventional models used elsewhere.
 RSpec.describe "ActiveRecord edge cases", :db do
+  def create_author(username, name = username.capitalize)
+    Author.create!(username: username, name: name)
+  end
+
   def stream(objects, options = {})
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)
@@ -32,146 +37,159 @@ RSpec.describe "ActiveRecord edge cases", :db do
   end
 
   it "remaps database-generated UUID primary keys" do
-    ship = Ship.create!(name: "Off-world shuttle")
-    cargo = Cargo.create!(ship: ship, contents: "memories")
+    author = create_author("rachael")
+    attachment = Attachment.create!(author: author, filename: "esper-photo.png")
+    variant = AttachmentVariant.create!(attachment: attachment, variant: "thumbnail")
 
-    io, _ = stream(cargo)
+    io, _ = stream(variant)
     Deckard::Loader.new(io).load
 
-    new_ship = Ship.where.not(id: ship.id).sole
-    new_cargo = Cargo.where.not(id: cargo.id).sole
-    expect(new_ship.id).to match(uuid_pattern)
-    expect(new_ship.id).not_to eq(ship.id)
-    expect(new_cargo.ship_id).to eq(new_ship.id)
+    new_attachment = Attachment.where.not(id: attachment.id).sole
+    new_variant = AttachmentVariant.where.not(id: variant.id).sole
+    expect(new_attachment.id).to match(uuid_pattern)
+    expect(new_attachment.id).not_to eq(attachment.id)
+    expect(new_variant.attachment_id).to eq(new_attachment.id)
   end
 
-  it "follows a self-referential belongs_to chain with class_name and custom foreign key" do
-    boss = Employee.create!(name: "Bryant")
-    middle = Employee.create!(name: "Gaff", manager: boss)
-    worker = Employee.create!(name: "Deckard", manager: middle)
+  it "follows a self-referential belongs_to chain through threaded replies" do
+    author = create_author("rachael")
+    post = Post.create!(author: author, title: "Nexus-6 field notes")
+    question = Comment.create!(post: post, author: author, body: "Have you ever retired a human by mistake?")
+    answer = Comment.create!(post: post, author: author, parent: question, body: "I'm not in the business.")
+    followup = Comment.create!(post: post, author: author, parent: answer, body: "That's not an answer.")
 
-    io, dumper = stream(worker)
-    expect(dumper.counts).to eq("Employee" => 3)
+    io, dumper = stream(followup)
+    expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Comment" => 3)
 
     Deckard::Loader.new(io).load
 
-    new_worker = Employee.where.not(id: [boss.id, middle.id, worker.id]).find_by(name: "Deckard")
-    expect(new_worker.manager.name).to eq("Gaff")
-    expect(new_worker.manager.manager.name).to eq("Bryant")
-    expect(new_worker.manager.manager.manager).to be_nil
+    new_followup = Comment.where.not(id: [question.id, answer.id, followup.id]).find_by!(body: "That's not an answer.")
+    expect(new_followup.parent.body).to eq("I'm not in the business.")
+    expect(new_followup.parent.parent.body).to eq("Have you ever retired a human by mistake?")
+    expect(new_followup.parent.parent.parent).to be_nil
   end
 
   it "dumps a record first when its parent's configured collection points back at it" do
-    # Book -> Library (belongs_to) -> books (configured has_many) -> Book
-    # again is a diamond, not a cycle: the library still precedes the book.
-    library = SpecialLibrary.create!(name: "Tyrell private stacks")
-    book = Book.create!(library: library, title: "Owl schematics")
-    other = Book.create!(library: library, title: "Nexus specs")
+    # Variant -> Attachment (belongs_to) -> variants (configured has_many)
+    # -> Variant again is a diamond, not a cycle: the attachment still
+    # precedes the variant.
+    author = create_author("rachael")
+    attachment = Attachment.create!(author: author, filename: "esper-photo.png")
+    variant = AttachmentVariant.create!(attachment: attachment, variant: "thumbnail")
+    other = AttachmentVariant.create!(attachment: attachment, variant: "enhanced")
 
-    io, dumper = stream(book)
-    expect(dumper.counts).to eq("SpecialLibrary" => 1, "Book" => 2)
+    io, dumper = stream(variant)
+    expect(dumper.counts).to eq("Author" => 1, "Attachment" => 1, "AttachmentVariant" => 2)
 
     Deckard::Loader.new(io).load
 
-    new_library = SpecialLibrary.where.not(id: library.id).sole
-    expect(new_library.books.pluck(:title)).to match_array(["Owl schematics", "Nexus specs"])
-    expect(Book.where.not(id: [book.id, other.id]).pluck(:library_id).uniq).to eq([new_library.id])
+    new_attachment = Attachment.where.not(id: attachment.id).sole
+    expect(new_attachment.variants.pluck(:variant)).to match_array(%w[thumbnail enhanced])
+    expect(AttachmentVariant.where.not(id: [variant.id, other.id]).pluck(:attachment_id).uniq).to eq([new_attachment.id])
   end
 
   it "references an STI subclass by its actual class in the stream" do
-    library = SpecialLibrary.create!(name: "Tyrell private stacks")
-    book = Book.create!(library: library, title: "Owl schematics")
+    author = create_author("gaff")
+    category = AnnouncementCategory.create!(name: "Announcements", slug: "announcements")
+    post = Post.create!(author: author, category: category, title: "Welcome to the forum")
 
-    io, _ = stream(book, omit_associations: [:books])
+    io, _ = stream(post)
 
     frames = frames(io)
-    expect(frames.map(&:first)).to eq(%w[SpecialLibrary Book])
-    book_frame = frames.last
-    expect(book_frame[2]["library_id"]).to eq([:id, "SpecialLibrary", library.id])
+    expect(frames.map(&:first)).to eq(%w[Author AnnouncementCategory Post])
+    post_frame = frames.last
+    expect(post_frame[2]["category_id"]).to eq([:id, "AnnouncementCategory", category.id])
   end
 
   it "round trips jsonb, array, decimal, boolean, date, microsecond time, binary, uuid, and enum values" do
-    source = Artifact.create!(
-      name: "esper photograph",
-      meta: {"zoom" => 34, "enhance" => [224, 176]},
-      tags: %w[replicant nexus6],
-      price: BigDecimal("19.99"),
-      active: false,
-      released_on: Date.new(2019, 11, 1),
-      measured_at: Time.utc(2019, 11, 1, 12, 30, 45, 123_456),
-      blob: "\x00\xFF\x01deckard".b,
-      token: SecureRandom.uuid,
-      status: "live"
+    author = Author.create!(
+      username: "rachael",
+      name: "Rachael",
+      verified: true,
+      role: "moderator",
+      settings: {"theme" => "dark", "enhance" => [224, 176]},
+      birthday: Date.new(2016, 1, 1),
+      api_token: SecureRandom.uuid,
+      avatar: "\x00\xFF\x01deckard".b,
+      joined_at: Time.utc(2019, 11, 1, 12, 30, 45, 123_456)
     )
+    post = Post.create!(author: author, title: "Esper photograph", keywords: %w[replicant nexus6])
+    donation = Donation.create!(author: author, post: post, amount: BigDecimal("19.99"))
 
-    io, _ = stream(source)
+    io, _ = stream(donation)
+    author.update_columns(username: "rachael-source")
     Deckard::Loader.new(io).load
 
-    loaded = Artifact.where.not(id: source.id).sole
-    expect(loaded.meta).to eq("zoom" => 34, "enhance" => [224, 176])
-    expect(loaded.tags).to eq(%w[replicant nexus6])
-    expect(loaded.price).to eq(BigDecimal("19.99"))
-    expect(loaded.active).to be(false)
-    expect(loaded.released_on).to eq(Date.new(2019, 11, 1))
-    expect(loaded.measured_at).to eq(Time.utc(2019, 11, 1, 12, 30, 45, 123_456))
-    expect(loaded.blob).to eq("\x00\xFF\x01deckard".b)
-    expect(loaded.token).to eq(source.token)
-    expect(loaded.status).to eq("live")
+    loaded = Author.where.not(id: author.id).sole
+    expect(loaded.verified).to be(true)
+    expect(loaded.role).to eq("moderator")
+    expect(loaded.settings).to eq("theme" => "dark", "enhance" => [224, 176])
+    expect(loaded.birthday).to eq(Date.new(2016, 1, 1))
+    expect(loaded.api_token).to eq(author.api_token)
+    expect(loaded.avatar).to eq("\x00\xFF\x01deckard".b)
+    expect(loaded.joined_at).to eq(Time.utc(2019, 11, 1, 12, 30, 45, 123_456))
+    expect(Post.where.not(id: post.id).sole.keywords).to eq(%w[replicant nexus6])
+    expect(Donation.where.not(id: donation.id).sole.amount).to eq(BigDecimal("19.99"))
   end
 
   it "skips stored generated columns so the destination computes them" do
-    source = Artifact.create!(name: "esper photograph")
-    expect(source.name_upper).to eq("ESPER PHOTOGRAPH")
+    author = create_author("rachael")
+    source = Post.create!(author: author, title: "Esper photograph", body: "Enhance 224 to 176.")
+    expect(source.search_vector).to include("'esper'")
 
     io, _ = stream(source)
-    expect(frames(io).sole[2]).not_to have_key("name_upper")
+    expect(frames(io).last[2]).not_to have_key("search_vector")
 
     Deckard::Loader.new(io).load
 
-    expect(Artifact.where.not(id: source.id).sole.name_upper).to eq("ESPER PHOTOGRAPH")
+    expect(Post.where.not(id: source.id).sole.search_vector).to eq(source.search_vector)
   end
 
   it "round trips a native PostgreSQL enum column" do
-    source = Artifact.create!(name: "esper photograph", mood: "ominous")
+    author = create_author("rachael")
+    source = Post.create!(author: author, title: "Esper photograph", status: "published")
 
     io, _ = stream(source)
     Deckard::Loader.new(io).load
 
-    expect(Artifact.where.not(id: source.id).sole.mood).to eq("ominous")
+    expect(Post.where.not(id: source.id).sole.status).to eq("published")
   end
 
   it "carries encrypted attributes as plaintext in the stream and re-encrypts on load" do
-    source = Artifact.create!(name: "esper photograph", notes: "unicorn dream")
+    source = Author.create!(username: "rachael", name: "Rachael", private_notes: "unicorn dream")
 
     io, _ = stream(source)
-    expect(frames(io).sole[2]["notes"]).to eq("unicorn dream")
+    expect(frames(io).sole[2]["private_notes"]).to eq("unicorn dream")
 
+    source.update_columns(username: "rachael-source")
     Deckard::Loader.new(io).load
 
-    loaded = Artifact.where.not(id: source.id).sole
-    expect(loaded.notes).to eq("unicorn dream")
-    raw = Artifact.connection.select_value(
-      "SELECT notes FROM artifacts WHERE id = #{Artifact.connection.quote(loaded.id)}"
+    loaded = Author.where.not(id: source.id).sole
+    expect(loaded.private_notes).to eq("unicorn dream")
+    raw = Author.connection.select_value(
+      "SELECT private_notes FROM authors WHERE id = #{Author.connection.quote(loaded.id)}"
     )
     expect(raw).not_to include("unicorn dream")
   end
 
   it "raises a clear error dumping a composite primary key model" do
-    itinerary = Itinerary.create!(vehicle_id: 1, leg: 1, note: "spinner to the Bradbury")
+    author = create_author("rachael")
+    post = Post.create!(author: author, title: "Nexus-6 field notes")
+    view = PostView.create!(post: post, viewed_on: Date.new(2026, 9, 1), count: 42)
 
-    expect { stream(itinerary) }
-      .to raise_error(Deckard::DumpError, /Itinerary has a composite primary key/)
+    expect { stream(view) }
+      .to raise_error(Deckard::DumpError, /PostView has a composite primary key/)
   end
 
   it "raises a clear error loading into a composite primary key model" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
-    Marshal.dump(["Itinerary", 1, {"vehicle_id" => 1, "leg" => 1, "note" => "smuggled"}], io)
+    Marshal.dump(["PostView", 1, {"post_id" => 1, "viewed_on" => Date.new(2026, 9, 1), "count" => 42}], io)
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 
     expect { Deckard::Loader.new(io).load }
-      .to raise_error(Deckard::LoadError, /Itinerary has a composite primary key/)
-    expect(Itinerary.count).to eq(0)
+      .to raise_error(Deckard::LoadError, /PostView has a composite primary key/)
+    expect(PostView.count).to eq(0)
   end
 end

@@ -1,0 +1,10 @@
+# Connection settings for the gem's test databases (spec/support/database.rb
+# loads this the way Rails loads config/database.yml). `primary` backs every
+# :db-tagged example; `destination` is the second database used by the
+# cross-database examples. Override either with the environment variable.
+test:
+  primary:
+    url: <%= ENV.fetch("DECKARD_TEST_DATABASE_URL", "postgres://127.0.0.1:5432/deckard_gem_test") %>
+  destination:
+    url: <%= ENV.fetch("DECKARD_TEST_DESTINATION_DATABASE_URL", "postgres://127.0.0.1:5432/deckard_gem_test_destination") %>
+    schema_dump: false

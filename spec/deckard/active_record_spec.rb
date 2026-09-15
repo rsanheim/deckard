@@ -2,15 +2,15 @@
 
 require "stringio"
 require_relative "../support/database_cleaner"
-require_relative "../support/test_models"
+require_relative "../support/forum_models"
 
 RSpec.describe Deckard::ActiveRecord, :db do
   before do
     Author.callbacks_fired.clear
   end
 
-  def create_author(name)
-    Author.create!(name: name)
+  def create_author(username, name = username.capitalize)
+    Author.create!(username: username, name: name)
   end
 
   def stream(objects, options = {})
@@ -23,21 +23,24 @@ RSpec.describe Deckard::ActiveRecord, :db do
   end
 
   it "copies a belongs_to foreign key that targets a non-primary-key column without remapping it" do
-    reader = Reader.create!(login: "rachael", email: "rachael@source.example")
-    note = ReaderNote.create!(reader: reader, body: "More human than human")
+    rachael = create_author("rachael")
+    deckard = create_author("deckard")
+    post = Post.create!(author: rachael, title: "Nexus-6 field notes")
+    comment = Comment.create!(post: post, author: deckard, body: "Have you ever retired a human by mistake?")
+    mention = Mention.create!(comment: comment, mentioned_username: "rachael")
 
-    io, dumper = stream(note)
-    expect(dumper.counts).to eq("Reader" => 1, "ReaderNote" => 1)
+    io, dumper = stream(mention)
+    expect(dumper.counts).to eq("Author" => 2, "Post" => 1, "Comment" => 1, "Mention" => 1)
 
     Deckard::Loader.new(io).load
 
-    new_note = ReaderNote.where.not(id: note.id).sole
-    expect(new_note.reader_login).to eq("rachael")
-    expect(new_note.reader).to eq(reader)
+    new_mention = Mention.where.not(id: mention.id).sole
+    expect(new_mention.mentioned_username).to eq("rachael")
+    expect(new_mention.author).to eq(rachael)
   end
 
   it "does not reload a belongs_to parent that is already in the stream" do
-    author = create_author("Rachael")
+    author = create_author("rachael")
     ids = 3.times.map { |i| Post.create!(author: author, title: "Post #{i}").id }
     fresh_posts = Post.where(id: ids).order(:id).to_a
 
@@ -51,18 +54,20 @@ RSpec.describe Deckard::ActiveRecord, :db do
     expect(author_queries).to eq(1)
     expect(dumper.counts).to eq("Author" => 1, "Post" => 3)
     Deckard::Loader.new(io).load
-    new_author = Author.where.not(id: author.id).sole
-    expect(Post.where(author_id: new_author.id).count).to eq(3)
+    expect(Post.where(author_id: author.id).count).to eq(6)
   end
 
   it "round trips a graph with destination-generated keys and remapped foreign keys" do
-    author = create_author("Rachael")
+    author = create_author("rachael")
     post = Post.create!(author: author, title: "Nexus-6 field notes")
     comment = Comment.create!(post: post, author: author, body: "I am the business.")
 
     io, dumper = stream(comment)
     expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Comment" => 1)
 
+    # Loading into the same database: the author's natural key would match
+    # the source row, so change it and force a fresh insert.
+    author.update_columns(username: "rachael-source")
     Deckard::Loader.new(io).load
 
     new_author = Author.where.not(id: author.id).sole
@@ -75,7 +80,7 @@ RSpec.describe Deckard::ActiveRecord, :db do
   end
 
   it "dumps has_one dependents automatically but not has_many collections" do
-    author = create_author("Rachael")
+    author = create_author("rachael")
     Profile.create!(author: author, bio: "More human than human")
     Post.create!(author: author, title: "not dumped")
 
@@ -85,13 +90,14 @@ RSpec.describe Deckard::ActiveRecord, :db do
   end
 
   it "dumps a shared dependency once and maps all foreign keys to one destination row" do
-    author = create_author("Rachael")
+    author = create_author("rachael")
     post = Post.create!(author: author, title: "Nexus-6 field notes")
     2.times { |i| Comment.create!(post: post, author: author, body: "comment #{i}") }
 
     io, dumper = stream(Comment.all)
     expect(dumper.counts["Author"]).to eq(1)
 
+    author.update_columns(username: "rachael-source")
     Deckard::Loader.new(io).load
 
     new_comments = Comment.where.not(post_id: post.id)
@@ -99,19 +105,21 @@ RSpec.describe Deckard::ActiveRecord, :db do
   end
 
   it "leaves a nil belongs_to foreign key nil" do
-    Payment.create!(amount: 10)
+    author = create_author("rachael")
+    post = Post.create!(author: author, title: "Uncategorized musings")
 
-    io, _ = stream(Payment.all)
+    io, _ = stream(post)
     Deckard::Loader.new(io).load
 
-    expect(Payment.count).to eq(2)
-    expect(Payment.pluck(:billable_id).uniq).to eq([nil])
+    expect(Post.count).to eq(2)
+    expect(Post.pluck(:category_id).uniq).to eq([nil])
   end
 
   it "bypasses validations and callbacks on load" do
-    author = Author.new(name: "Invalid Replicant")
+    author = Author.new(username: "rachael", name: "Invalid Replicant")
     author.save!(validate: false)
     io, _ = stream(author)
+    author.update_columns(username: "rachael-source")
     Author.callbacks_fired.clear
 
     Deckard::Loader.new(io).load
@@ -121,7 +129,8 @@ RSpec.describe Deckard::ActiveRecord, :db do
   end
 
   it "rolls back everything when the stream has no end marker" do
-    author = create_author("Rachael")
+    author = create_author("rachael")
+    author.update_columns(username: "rachael-source")
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)
     dumper.dump(author)
@@ -134,8 +143,8 @@ RSpec.describe Deckard::ActiveRecord, :db do
   it "rolls back prior inserts when a later insert fails, raising InsertError with context" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
-    Marshal.dump(["Author", 1, {"name" => "loads fine"}], io)
-    Marshal.dump(["Author", 2, {"name" => nil}], io)
+    Marshal.dump(["Author", 1, {"username" => "fine", "name" => "loads fine"}], io)
+    Marshal.dump(["Author", 2, {"username" => "broken", "name" => nil}], io)
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 
@@ -144,54 +153,51 @@ RSpec.describe Deckard::ActiveRecord, :db do
   end
 
   it "round trips a populated polymorphic belongs_to" do
-    author = create_author("Rachael")
-    payment = Payment.create!(billable: author, amount: 10)
+    author = create_author("rachael")
+    post = Post.create!(author: author, title: "Nexus-6 field notes")
+    reaction = Reaction.create!(author: author, reactable: post, kind: "like")
 
-    io, dumper = stream(payment)
-    expect(dumper.counts).to eq("Author" => 1, "Payment" => 1)
+    io, dumper = stream(reaction)
+    expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Reaction" => 1)
 
     Deckard::Loader.new(io).load
 
-    new_author = Author.where.not(id: author.id).sole
-    new_payment = Payment.where.not(id: payment.id).sole
-    expect(new_payment.billable_type).to eq("Author")
-    expect(new_payment.billable_id).to eq(new_author.id)
+    new_post = Post.where.not(id: post.id).sole
+    new_reaction = Reaction.where.not(id: reaction.id).sole
+    expect(new_reaction.reactable_type).to eq("Post")
+    expect(new_reaction.reactable_id).to eq(new_post.id)
   end
 
   it "round trips an explicitly selected reverse polymorphic has_many" do
-    author = create_author("Rachael")
-    payment = Payment.create!(billable: author, amount: 10)
+    author = create_author("rachael")
+    post = Post.create!(author: author, title: "Nexus-6 field notes")
+    reaction = Reaction.create!(author: author, reactable: post, kind: "like")
 
-    io, dumper = stream(author, associations: [:payments])
-    expect(dumper.counts).to eq("Author" => 1, "Payment" => 1)
+    io, dumper = stream(author, associations: [:reactions])
+    expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Reaction" => 1)
 
+    author.update_columns(username: "rachael-source")
     Deckard::Loader.new(io).load
 
     new_author = Author.where.not(id: author.id).sole
-    new_payment = Payment.where.not(id: payment.id).sole
-    expect(new_author.payments).to contain_exactly(new_payment)
+    new_reaction = Reaction.where.not(id: reaction.id).sole
+    expect(new_author.reactions).to contain_exactly(new_reaction)
+    expect(new_reaction.reactable).to eq(Post.where.not(id: post.id).sole)
   end
 
   it "omits polymorphic traversal without changing the foreign-key fields" do
-    author = create_author("Rachael")
-    payment = Payment.create!(billable: author, amount: 10)
+    author = create_author("rachael")
+    post = Post.create!(author: author, title: "Nexus-6 field notes")
+    reaction = Reaction.create!(author: author, reactable: post, kind: "like")
 
-    io, dumper = stream(payment, omit_associations: [:billable])
-    expect(dumper.counts).to eq("Payment" => 1)
+    io, dumper = stream(reaction, omit_associations: [:reactable])
+    expect(dumper.counts).to eq("Author" => 1, "Reaction" => 1)
 
     Deckard::Loader.new(io).load
 
-    new_payment = Payment.where.not(id: payment.id).sole
-    expect(new_payment.amount).to eq(10)
-    expect(new_payment.billable_type).to eq("Author")
-    expect(new_payment.billable_id).to eq(author.id)
-  end
-
-  it "raises DumpError on a belongs_to dependency cycle" do
-    a = CycleA.create!
-    b = CycleB.create!(cycle_a: a)
-    a.update_columns(cycle_b_id: b.id)
-
-    expect { stream(a.reload) }.to raise_error(Deckard::DumpError, /dependency cycle/)
+    new_reaction = Reaction.where.not(id: reaction.id).sole
+    expect(new_reaction.kind).to eq("like")
+    expect(new_reaction.reactable_type).to eq("Post")
+    expect(new_reaction.reactable_id).to eq(post.id)
   end
 end

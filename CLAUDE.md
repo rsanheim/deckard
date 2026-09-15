@@ -24,6 +24,8 @@ bundle exec rspec spec/deckard_spec.rb          # one spec file
 bundle exec rspec spec/deckard_spec.rb:12       # one example by line
 bundle exec standardrb    # lint (standardrb --fix to autocorrect)
 bin/console               # IRB with the gem loaded
+bundle exec rake db:migrate   # migrate the test databases and regenerate spec/db/schema.rb
+bundle exec rake db:reset     # drop, create, migrate, and seed the test databases
 ```
 
 ## Test tiers
@@ -31,9 +33,16 @@ bin/console               # IRB with the gem loaded
 Two tiers with a hard boundary:
 
 - Unit/integration (`spec/`): a normal gem suite, runs on the host via `bundle exec rake`.
-  The ActiveRecord specs use a real local PostgreSQL
-  (default `postgres://127.0.0.1:5432/deckard_gem_test`, override with
-  `DECKARD_TEST_DATABASE_URL`) and fail when no server is reachable.
+  The ActiveRecord specs use a real local PostgreSQL 18 and fail when no server is
+  reachable. The schema is a small forum (authors, posts, threaded comments, tags,
+  reactions, attachments, and so on) whose ordinary features carry every shape deckard
+  must handle. It is managed with ActiveRecord's own machinery, configured in
+  `spec/support/database.rb`: connection settings in `spec/db/database.yml` (override
+  with `DECKARD_TEST_DATABASE_URL` and `DECKARD_TEST_DESTINATION_DATABASE_URL`), one
+  migration in `spec/db/migrate`, the generated `spec/db/schema.rb` the specs load, and
+  realistic seed data in `spec/db/seeds.rb`. Models live in `spec/support/forum_models.rb`.
+  Change the schema by editing the migration and running `rake db:reset`, then commit
+  the regenerated schema.rb.
 - E2E / full-stack (`harness/`): a real Rails 8.1 app streamed between two containers,
   entirely inside docker compose — source app + source PostgreSQL, destination app +
   destination PostgreSQL, no ports exposed to the host. Run with `bundle exec rake e2e`
