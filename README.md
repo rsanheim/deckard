@@ -150,3 +150,8 @@ schema managed with ActiveRecord's own migration and schema tooling under
 full-stack test: a real Rails app streaming between two docker compose
 containers. `bundle exec rake test-all` runs both host-side checks and the
 full-stack test. See `docs/spec.md` for the v1.0 specification.
+
+Crow CI runs `bundle exec rake` on pull requests, default-branch pushes, and
+manual runs using Ruby 4.0.6 and an isolated PostgreSQL 18.6 service. The workflow
+is in `.crow/ruby.yaml`; it covers specs, Standard lint, and the style ratchet.
+The Docker end-to-end harness and performance suite remain separate local tasks.

@@ -28,6 +28,14 @@ bundle exec rake db:migrate   # migrate the test databases and regenerate spec/d
 bundle exec rake db:reset     # drop, create, migrate, and seed the test databases
 ```
 
+## CI
+
+See [AGENTS.md](AGENTS.md#ci-and-validation) for CI coverage and validation
+commands. The Crow workflow in `.crow/ruby.yaml` runs `bundle exec rake`
+(specs, Standard lint, and the style ratchet) on PRs, default-branch pushes,
+and manual triggers. It uses Ruby 4.0.6 and PostgreSQL 18.6. E2E and performance
+tests are separate tasks; a green CI result does not cover them.
+
 ## Test tiers
 
 Two tiers with a hard boundary:
