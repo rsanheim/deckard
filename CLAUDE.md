@@ -74,7 +74,9 @@ Planned internal structure (spec section 16) — six small classes, no adapter f
 - `Deckard::Dumper` — dedupe by `[type, source_id]`, call `dump_replicant`, write frames
 - `Deckard::Loader` — read frames incrementally, resolve `[:id, "User", 1234]` reference tuples, call `load_replicant`, manage the transaction
 - `Deckard::ModelConfig` — backs the `replicate do ... end` model DSL (associations, natural keys, omissions)
-- `Deckard::ActiveRecord` — traversal (belongs_to and has_one automatic; has_many opt-in), callback/validation-free inserts via PostgreSQL `RETURNING`. Models gain only `replicate`, `dump_replicant`, and `load_replicant`; everything else stays in plain objects
+- `Deckard::ActiveRecord` — the mixin included into ActiveRecord::Base. Models gain only `replicate`, `dump_replicant`, and `load_replicant`; everything else stays in plain objects:
+  - `Deckard::ActiveRecord::Dump` (lib/deckard/active_record/dump.rb) — traversal: belongs_to and has_one automatic, has_many opt-in, foreign-key re-encoding
+  - `Deckard::ActiveRecord::Load` (lib/deckard/active_record/load.rb) — callback/validation-free inserts via PostgreSQL `RETURNING`, or natural-key matched updates
 - `Deckard::Status` — counts by type on stderr; stdout carries only the stream
 
 Key design constraints to preserve:
