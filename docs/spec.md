@@ -1401,7 +1401,7 @@ Complete:
       bounded per section 18.14, large attributes, throughput baseline).
 - [x] Truncated-stream rollback tests.
 - [x] Security warnings around `Marshal` and production data.
-- [ ] Gem packaging (gemspec summary/description/push-host TODOs remain).
+- [x] Gem packaging (release metadata, MIT license, and strict gem build).
 - [x] `deckard` executable.
 - [x] README examples mirroring the original `replicate` README.
 
