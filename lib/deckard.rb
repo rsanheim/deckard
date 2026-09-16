@@ -5,6 +5,8 @@ require_relative "deckard/errors"
 require_relative "deckard/dumper"
 require_relative "deckard/loader"
 require_relative "deckard/model_config"
+require_relative "deckard/active_record/dump"
+require_relative "deckard/active_record/load"
 require_relative "deckard/active_record"
 
 require "active_support/lazy_load_hooks"
