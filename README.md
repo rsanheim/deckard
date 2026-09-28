@@ -1,10 +1,12 @@
 # Deckard
 
-Deckard streams ActiveRecord objects between Rails environments — a modern
-resurrection of the [replicate](https://github.com/rtomayko/replicate) gem for
-ActiveRecord 8+ and PostgreSQL. Its primary use is piping selected production
+Deckard allows you to replicate ActiveRecord object with underlying data between environments. It does this by smartly traversing associations, remapping id's and avoiding cycles. 
+
+It is inspired by the old gem [replicate](https://github.com/rtomayko/replicate), but updated for modern ActiveRecord 8 and up. Right now it only targets PostgreSQL.
+Its primary use is piping selected production
 records into a local development database for debugging and realistic
 development data.
+
 
 ```bash
 ssh example.org "deckard -r /app/config/environment -d 'User.find(1234)'" \
