@@ -2,7 +2,6 @@
 
 require "bigdecimal"
 require "securerandom"
-require "stringio"
 require_relative "../support/database_cleaner"
 require_relative "../support/forum_models"
 
@@ -13,27 +12,8 @@ RSpec.describe "ActiveRecord edge cases", :db do
     Author.create!(username: username, name: name)
   end
 
-  def stream(objects)
-    io = StringIO.new
-    dumper = Deckard::Dumper.new(io)
-    Array(objects).each { |object| dumper.dump(object) }
-    dumper.complete
-    io.rewind
-    [io, dumper]
-  end
-
   def uuid_pattern
     /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
-  end
-
-  def frames(io)
-    io.rewind
-    result = []
-    while (frame = Marshal.load(io)) != Deckard::STREAM_END
-      result << frame unless frame == Deckard::STREAM_HEADER
-    end
-    io.rewind
-    result
   end
 
   it "remaps database-generated UUID primary keys" do
@@ -69,51 +49,65 @@ RSpec.describe "ActiveRecord edge cases", :db do
     expect(new_followup.parent.parent.parent).to be_nil
   end
 
-  it "carries a referenced parent as a row only, whatever its plan entry owns" do
-    # Variant -> Attachment (belongs_to): the attachment's own plan says
-    # attachments carry their variants, but it was reached by reference,
-    # so its other variant stays behind.
-    author = create_author("rachael")
-    attachment = Attachment.create!(author: author, filename: "esper-photo.png")
-    variant = AttachmentVariant.create!(attachment: attachment, variant: "thumbnail")
-    AttachmentVariant.create!(attachment: attachment, variant: "enhanced")
+  it "carries a record reached only by belongs_to as a row, whatever its entry owns" do
+    rachael = create_author("rachael")
+    deckard = create_author("deckard")
+    Profile.create!(author: deckard, bio: "Ex-cop.")
+    AuthorEmail.create!(author: deckard, address: "deckard@lapd.example")
+    origami = Post.create!(author: deckard, title: "Unicorn origami")
+    Comment.create!(post: origami, author: deckard, body: "Noted.")
+    Reaction.create!(author: rachael, reactable: origami, kind: "like")
 
-    io, dumper = stream(variant)
-    expect(dumper.counts).to eq("Author" => 1, "Attachment" => 1, "AttachmentVariant" => 1)
+    # rachael's reaction needs deckard's post, and the post needs deckard.
+    # Both arrive as rows: his profile (has_one), emails and posts (planned
+    # collections) and the post's comments stay behind.
+    _, dumper = stream(rachael)
 
-    Deckard::Loader.new(io).load
-
-    new_attachment = Attachment.where.not(id: attachment.id).sole
-    expect(new_attachment.variants.pluck(:variant)).to eq(["thumbnail"])
+    expect(dumper.counts).to eq("Author" => 2, "Post" => 1, "Reaction" => 1)
   end
 
-  it "expands a record dumped earlier as a dependency when it is later a root" do
+  it "walks a record reached as a dependency first and owned later in one dump" do
+    rachael = create_author("rachael")
+    post = Post.create!(author: rachael, title: "Nexus-6 field notes")
+    Reaction.create!(author: rachael, reactable: post, kind: "like")
+    Comment.create!(post: post, author: rachael, body: "Noted.")
+
+    # Author's plan names reactions before posts: the reaction reaches the
+    # post as a dependency (a row), then the posts collection owns it and
+    # its comments follow. The post is written once, where it first landed.
+    io, dumper = stream(rachael)
+
+    expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Reaction" => 1, "Comment" => 1)
+    expect(frames(io).map(&:first)).to eq(%w[Author Post Reaction Comment])
+  end
+
+  it "walks a record dumped as a dependency by one root when a later root owns it" do
     rachael = create_author("rachael")
     deckard = create_author("deckard")
     post = Post.create!(author: deckard, title: "Unicorn origami")
     Reaction.create!(author: rachael, reactable: post, kind: "like")
     Comment.create!(post: post, author: deckard, body: "Noted.")
 
-    # rachael's reaction reaches deckard by reference: his row, not his
-    # posts. Dumping him next walks his collections; his row is not
-    # written twice.
-    io, dumper = stream([rachael, deckard])
+    io, dumper = stream(Author.where(username: %w[rachael deckard]).order(:id))
 
     expect(dumper.counts).to eq("Author" => 2, "Reaction" => 1, "Post" => 1, "Comment" => 1)
+    expect(frames(io).map { |type, id, _| [type, id] }.uniq.size).to eq(5)
     expect(frames(io).map(&:first)).to eq(%w[Author Author Post Reaction Comment])
   end
 
-  it "references an STI subclass by its actual class in the stream" do
+  it "references an STI subclass by its actual class and applies its nearest ancestor's entry" do
     author = create_author("gaff")
-    category = AnnouncementCategory.create!(name: "Announcements", slug: "announcements")
+    category = AnnouncementCategory.create!(name: "Announcements", slug: "announcements", moderator_notes: "pin sparingly")
     post = Post.create!(author: author, category: category, title: "Welcome to the forum")
 
     io, _ = stream(post)
 
     frames = frames(io)
     expect(frames.map(&:first)).to eq(%w[Author AnnouncementCategory Post])
-    post_frame = frames.last
-    expect(post_frame[2]["category_id"]).to eq([:id, "AnnouncementCategory", category.id])
+    category_frame = frames[1]
+    expect(category_frame[3]).to eq(["slug"])
+    expect(category_frame[2]["moderator_notes"]).to eq("pin sparingly")
+    expect(frames.last[2]["category_id"]).to eq([:id, "AnnouncementCategory", category.id])
   end
 
   it "round trips jsonb, array, decimal, boolean, date, microsecond time, binary, uuid, and enum values" do

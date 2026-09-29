@@ -2,14 +2,8 @@
 
 module Deckard
   module ActiveRecord
-    # Dumps one record and its dependencies by the root's plan. Traversal
-    # order: belongs_to associations, the record itself, then, for the root
-    # and records reached through has_one or a planned collection, its
-    # has_one associations and the collections the plan names for its
-    # class. A record reached only through belongs_to is a dependency: it
-    # carries its row and its own dependencies so foreign keys resolve, and
-    # nothing it owns, however its plan entry reads. Records reached from
-    # this one are dumped by the same plan.
+    # Dumps one record by the root's plan (docs/traversal.md), and the records
+    # it reaches by the same plan.
     class Dump
       # Stored generated columns (GENERATED ALWAYS AS ... STORED) are never
       # dumped: the destination database computes them, and PostgreSQL
@@ -32,19 +26,18 @@ module Deckard
         @dumper = dumper
         @plan = plan
         @owned = owned
-        @config = plan.for(@model)
+        @entry = plan.for(@model)
       end
 
       def call
-        @dumper.once(@model.name, @source_id, owned: @owned) do
-          @config.validate!(@model)
-          attributes = @record.attributes.except(*GENERATED_COLUMNS[@model], *@config.omitted_fields.map(&:to_s))
+        @dumper.visit(@model.name, @source_id, walk: @owned) do
+          attributes = @record.attributes.except(*GENERATED_COLUMNS[@model], *@entry.omitted_fields)
           dump_belongs_to(attributes)
-          @dumper.write(@model.name, @source_id, attributes, @config.natural_key_attributes.map(&:to_s))
+          @dumper.write(@model.name, @source_id, attributes, @entry.natural_key_attributes)
           next unless @owned
 
-          dump_has_one
-          dump_configured
+          owned = @model.reflect_on_all_associations(:has_one).map(&:name) | @entry.extra_associations
+          (owned - @entry.omitted_associations).each { |name| dump_owned(@record.public_send(name)) }
         end
       end
 
@@ -53,20 +46,20 @@ module Deckard
       def dump_belongs_to(attributes)
         @model.reflect_on_all_associations(:belongs_to).each do |reflection|
           foreign_key = reflection.foreign_key.to_s
-          next if @config.omitted_associations.include?(reflection.name)
+          next if @entry.omitted_associations.include?(reflection.name)
           next if encode_dumped_parent(attributes, reflection, foreign_key)
 
           referenced = @record.public_send(reflection.name)
           next if referenced.nil?
 
-          dump_related(referenced, owned: false)
+          self.class.new(referenced, @dumper, @plan, owned: false).call
           referenced_id = self.class.source_id(referenced)
           unless @dumper.dumped?(referenced.class.name, referenced_id)
             raise DumpError,
               "dependency cycle detected: #{@model}(#{@source_id}).#{reflection.name} " \
               "references #{referenced.class.name}(#{referenced_id}), which cannot be emitted first"
           end
-          next if @config.omitted_fields.include?(foreign_key.to_sym)
+          next if @entry.omitted_fields.include?(foreign_key)
           # A belongs_to whose primary_key option targets a non-primary-key
           # column (belongs_to :account, primary_key: :login) carries a natural
           # value, not a source ID. It needs no remapping and must not be
@@ -88,30 +81,13 @@ module Deckard
         value = @record[foreign_key]
         return false if value.nil? || !@dumper.dumped?(reflection.klass.name, value)
 
-        attributes[foreign_key] = [:id, reflection.klass.name, value] unless @config.omitted_fields.include?(foreign_key.to_sym)
+        attributes[foreign_key] = [:id, reflection.klass.name, value] unless @entry.omitted_fields.include?(foreign_key)
         true
       end
 
-      def dump_has_one
-        @model.reflect_on_all_associations(:has_one).each do |reflection|
-          next if @config.omitted_associations.include?(reflection.name)
-          dump_related(@record.public_send(reflection.name), owned: true)
-        end
-      end
-
-      def dump_configured
-        @config.extra_associations.each do |name|
-          next if @config.omitted_associations.include?(name)
-          dump_related(@record.public_send(name), owned: true)
-        end
-      end
-
-      # One record or a collection, dumped by this root's plan.
-      def dump_related(associated, owned:)
-        return if associated.nil?
-        return self.class.new(associated, @dumper, @plan, owned: owned).call unless associated.respond_to?(:find_each)
-
-        associated.find_each { |record| self.class.new(record, @dumper, @plan, owned: owned).call }
+      def dump_owned(associated)
+        records = associated.respond_to?(:find_each) ? associated.find_each : Array(associated)
+        records.each { |record| self.class.new(record, @dumper, @plan, owned: true).call }
       end
     end
   end

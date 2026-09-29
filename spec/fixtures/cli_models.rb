@@ -9,6 +9,7 @@ puts "application booted" if ENV["DECKARD_BOOT_LOG"] == "1"
 require "zeitwerk"
 autoloader = Zeitwerk::Loader.new
 autoloader.push_dir(File.expand_path("cli_autoload", __dir__))
+autoloader.push_dir(File.expand_path("cli_autoload_broken", __dir__)) if ENV["DECKARD_BROKEN_PLAN"] == "1"
 autoloader.setup
 
 # Plain-Ruby replicant classes for the CLI subprocess specs. Loading appends

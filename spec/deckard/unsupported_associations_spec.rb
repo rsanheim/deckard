@@ -10,7 +10,7 @@ RSpec.describe "unsupported ActiveRecord associations", :db do
     dumper = Deckard::Dumper.new(StringIO.new)
 
     expect { dumper.dump(author) }.to raise_error(
-      Deckard::UnsupportedAssociation,
+      Deckard::ConfigurationError,
       "Bookmarker.bookmarked_posts is a has_and_belongs_to_many association, " \
         "which deckard does not support; use an explicit join model and replicate that association instead"
     )
@@ -22,7 +22,7 @@ RSpec.describe "unsupported ActiveRecord associations", :db do
     dumper = Deckard::Dumper.new(StringIO.new)
 
     expect { dumper.dump(author) }.to raise_error(
-      Deckard::UnsupportedAssociation,
+      Deckard::ConfigurationError,
       "Commenter.commented_posts is a has_many :through association, " \
         "which deckard does not support; replicate :comments instead"
     )

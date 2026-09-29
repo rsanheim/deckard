@@ -33,15 +33,28 @@ RSpec.describe "deckard CLI" do
     expect(err).to include("CliWidget")
   end
 
-  it "eager loads the application before dumping or loading" do
+  it "eager loads the application and validates every plan before dumping" do
     _, err, status = run_deckard("-r", fixture, "-d", "WIDGETS")
     expect(status.exitstatus).to eq(0)
     expect(err).to include("LazyWidget loaded")
 
+    out, err, status = run_deckard("-r", fixture, "-d", "WIDGETS", env: {"DECKARD_BROKEN_PLAN" => "1"})
+    expect(status.exitstatus).to eq(1)
+    expect(err).to include("Deckard::ConfigurationError")
+    expect(err).to include('"Refund" is named in a replicate block')
+    expect(out).to be_empty
+  end
+
+  it "loads without consulting the destination's plans" do
+    dumped, _, _ = run_deckard("-r", fixture, "-d", "WIDGETS")
+
     Tempfile.create("deckard-cli-out") do |out_file|
-      _, err, status = run_deckard("-r", fixture, "-l", stdin: "", env: {"DECKARD_CLI_OUT" => out_file.path})
-      expect(status.exitstatus).to eq(1)
-      expect(err).to include("LazyWidget loaded")
+      _, err, status = run_deckard("-r", fixture, "-l",
+        stdin: dumped, env: {"DECKARD_CLI_OUT" => out_file.path, "DECKARD_BROKEN_PLAN" => "1"})
+
+      expect(status.exitstatus).to eq(0)
+      expect(err).not_to include("LazyWidget loaded")
+      expect(err).to include("loaded 2 total objects")
     end
   end
 

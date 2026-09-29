@@ -16,8 +16,6 @@ module Deckard
 
   class LoadError < Error; end
 
-  class UnsupportedAssociation < DumpError; end
-
   class UnresolvedReference < LoadError; end
 
   class InvalidStream < LoadError; end

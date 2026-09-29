@@ -12,7 +12,7 @@ module Deckard
       @output = output
       @after_write = after_write
       @dumped = Set.new
-      @owned = Set.new
+      @walked = Set.new
       @in_progress = Set.new
       @counts = Hash.new(0)
       write_frame(STREAM_HEADER)
@@ -35,18 +35,15 @@ module Deckard
       end
     end
 
-    # Runs the block for a [type, id] not yet written, or written as a
-    # dependency only and now reached as owned. A record reached again while
-    # its own dump is in progress can only have been reached through its
-    # dependencies, which means they lead back to it: a cycle. That entry is
-    # skipped, and callers that need the identity written first check
-    # #dumped? after and raise.
-    def once(type, id, owned:)
+    # Runs the block for a [type, id] not yet written, or written but not
+    # yet walked when walk is true. A record visited again while its own
+    # visit is in progress is a dependency cycle: the block is skipped, and
+    # callers that need the identity written first check #dumped? and raise.
+    def visit(type, id, walk:)
       key = [type.to_s, id]
-      return if @in_progress.include?(key)
-      return if @dumped.include?(key) && (!owned || @owned.include?(key))
+      return if @in_progress.include?(key) || (walk ? @walked : @dumped).include?(key)
 
-      @owned.add(key) if owned
+      @walked.add(key) if walk
       @in_progress.add(key)
       begin
         yield
@@ -64,9 +61,6 @@ module Deckard
     # existing record to reuse; empty means always insert.
     def write(type, id, attributes, natural_key = [])
       type = type.to_s
-      unless natural_key.is_a?(Array)
-        raise DumpError, "#{type}(#{id}): natural key must be an array of attribute names, got #{natural_key.class}"
-      end
       return if @dumped.include?([type, id])
 
       @dumped.add([type, id])

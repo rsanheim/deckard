@@ -13,15 +13,6 @@ RSpec.describe Deckard::ActiveRecord, :db do
     Author.create!(username: username, name: name)
   end
 
-  def stream(objects)
-    io = StringIO.new
-    dumper = Deckard::Dumper.new(io)
-    Array(objects).each { |object| dumper.dump(object) }
-    dumper.complete
-    io.rewind
-    [io, dumper]
-  end
-
   it "copies a belongs_to foreign key that targets a non-primary-key column without remapping it" do
     rachael = create_author("rachael")
     deckard = create_author("deckard")

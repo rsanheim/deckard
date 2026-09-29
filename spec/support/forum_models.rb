@@ -4,7 +4,9 @@ require "active_record"
 
 # The forum models behind the gem's ActiveRecord specs, backed by the schema
 # in spec/db/schema.rb. Defining them touches no database. Each replicate
-# block is the whole plan for dumps rooted at that model.
+# block is the whole plan for dumps rooted at that model; plans that only
+# name Author's natural key exist so round-trip specs, which load back into
+# the source database, reuse authors instead of violating the username index.
 
 class Author < ActiveRecord::Base
   has_one :profile
@@ -35,11 +37,13 @@ class Author < ActiveRecord::Base
     @callbacks_fired ||= []
   end
 
-  # An author's forum activity, matched on the destination by username;
-  # the one profile and the emails already present are updated in place.
+  # An author's forum activity. Reactions come before posts so an author
+  # who reacts to their own post reaches it as a dependency first and owns
+  # it later. There is no Reaction entry, so a reaction's target is followed
+  # here even though Reaction's own plan omits it.
   replicate do
     natural_key :username
-    associations :posts, :author_emails, :reactions, :donations, :attachments
+    associations :reactions, :posts, :author_emails, :donations, :attachments
     model "Profile" do
       natural_key :author_id
     end
@@ -88,16 +92,20 @@ end
 class AnnouncementCategory < Category
 end
 
-# Deliberately broken: its plan names an association that does not exist,
-# which must raise at dump time, and a model that does not exist, which
-# whole-plan validation must report.
+# Deliberately broken: names an association and an attribute the model
+# lacks, a model that does not exist, and an unsupported association on a
+# reached class. Whole-plan validation must report all of it.
 class MisconfiguredCategory < ActiveRecord::Base
   self.table_name = "categories"
 
   replicate do
     associations :moderators
+    natural_key :handle
     model "Moderator" do
       natural_key :login
+    end
+    model "Post" do
+      associations :tags
     end
   end
 end
@@ -137,18 +145,17 @@ class Post < ActiveRecord::Base
   has_many :donations
   has_many :post_views
 
-  # A post and its comment threads. Comment is named before its class is
-  # defined, Category after; Category's own plan is not consulted here.
+  # A post and its comment threads. Authors and the category are reached by
+  # reference: their own plans are never consulted here, so a post dump
+  # carries moderator_notes while a category dump omits them.
   replicate do
     associations :comments
     model "Comment" do
-      associations :replies
+      associations :replies, :mentions
     end
     model "Author" do
       natural_key :username
-    end
-    model "Profile" do
-      natural_key :author_id
+      omit_fields :private_notes, :api_token
     end
     model "Category" do
       natural_key :slug

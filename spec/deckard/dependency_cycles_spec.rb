@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "stringio"
 require_relative "../support/database_cleaner"
 require_relative "../support/forum_models"
 
@@ -12,24 +11,6 @@ RSpec.describe "dependency cycles", :db do
     Author.create!(username: username, name: name)
   end
 
-  def stream(objects)
-    io = StringIO.new
-    dumper = Deckard::Dumper.new(io)
-    Array(objects).each { |object| dumper.dump(object) }
-    dumper.complete
-    io.rewind
-    [io, dumper]
-  end
-
-  def frames(io)
-    io.rewind
-    result = []
-    while (frame = Marshal.load(io)) != Deckard::STREAM_END
-      result << frame unless frame == Deckard::STREAM_HEADER
-    end
-    result
-  end
-
   it "raises DumpError for two records that require each other, and the partial stream never loads" do
     rachael = create_author("rachael")
     post = Post.create!(author: rachael, title: "Nexus-6 field notes")
@@ -37,8 +18,10 @@ RSpec.describe "dependency cycles", :db do
 
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)
-    expect { dumper.dump(rachael.reload) }
-      .to raise_error(Deckard::DumpError, /dependency cycle detected: (Author|Post)\(\d+\)\.(featured_post|author) references/)
+    expect { dumper.dump(rachael.reload) }.to raise_error(
+      Deckard::DumpError,
+      "dependency cycle detected: Post(#{post.id}).author references Author(#{rachael.id}), which cannot be emitted first"
+    )
 
     io.rewind
     expect { Deckard::Loader.new(io).load }.to raise_error(Deckard::InvalidStream)
@@ -54,7 +37,29 @@ RSpec.describe "dependency cycles", :db do
     rachael.update_columns(featured_post_id: origami.id)
     deckard.update_columns(featured_post_id: nexus.id)
 
-    expect { stream(rachael.reload) }.to raise_error(Deckard::DumpError, /dependency cycle detected/)
+    expect { stream(rachael.reload) }.to raise_error(
+      Deckard::DumpError,
+      "dependency cycle detected: Post(#{nexus.id}).author references Author(#{rachael.id}), which cannot be emitted first"
+    )
+  end
+
+  it "rolls back rows already loaded when the stream stops at a cycle", db: :multiple do
+    gaff = create_author("gaff")
+    rachael = create_author("rachael")
+    post = Post.create!(author: rachael, title: "Nexus-6 field notes")
+    rachael.update_columns(featured_post_id: post.id)
+
+    io = StringIO.new
+    dumper = Deckard::Dumper.new(io)
+    dumper.dump(gaff)
+    expect { dumper.dump(rachael.reload) }.to raise_error(Deckard::DumpError, /dependency cycle/)
+    expect(dumper.counts).to eq("Author" => 1)
+
+    DeckardTestDatabase.with_destination do
+      io.rewind
+      expect { Deckard::Loader.new(io).load }.to raise_error(Deckard::InvalidStream, /without an end marker/)
+      expect(Author.count).to eq(0)
+    end
   end
 
   it "raises DumpError for a record that references itself" do

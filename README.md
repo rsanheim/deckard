@@ -110,13 +110,15 @@ end
 Classes are named as strings, so the root never forces them to load first,
 and an STI subclass follows the entry for its nearest declared ancestor. Each
 record travels with the natural key its plan gave it, so the destination
-needs no plan of its own.
+needs no plan of its own. That also means a natural key is repeated in every
+plan whose dumps reach the class: a Customer entry in Order's plan and one in
+Invoice's, each saying how a customer is matched.
 
-Before dumping or loading, the `deckard` executable eager loads the
-application so every `replicate` block has run, then validates every plan:
-each named class must be a loaded ActiveRecord model, and each named
-association and attribute must exist on it. A bad plan fails there, reporting
-every problem at once, before any record is dumped or loaded.
+Before dumping, the `deckard` executable eager loads the application so
+every `replicate` block has run, then validates every plan: each named class
+must be a loaded ActiveRecord model, and each named association and attribute
+must exist on it. A bad plan fails there, reporting every problem at once,
+before any record is dumped. Loading consults no plan at all.
 
 ## Dumping
 

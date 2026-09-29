@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
+require "active_support/core_ext/string/inflections"
+
 module Deckard
-  # A replication plan. A model's `replicate do ... end` block is the plan
-  # for dumps rooted at that model: what the root carries and, through
-  # `model`, how each class those dumps reach is dumped and matched. A dump
-  # follows its root's plan only; a reached class's own block is not
-  # consulted. Classes are matched through their ancestors, so an STI
-  # subclass follows the entry for its nearest declared ancestor.
+  # A replication plan: a root model's `replicate do ... end` block. The plan
+  # is an entry for the root plus, through `model`, an entry for each class
+  # its dumps reach, all in one table shared by the plan's entries. A class
+  # finds its entry through its ancestors, so an STI subclass follows its
+  # nearest declared ancestor. See docs/traversal.md.
   class ModelConfig
     attr_reader :name, :extra_associations, :natural_key_attributes, :omitted_fields, :omitted_associations
 
@@ -17,35 +18,30 @@ module Deckard
         @plans[name] = new(name).tap { |plan| plan.instance_eval(&block) }
       end
 
-      # The plan for a dump rooted at klass.
       def plan_for(klass)
-        klass.ancestors.each do |ancestor|
-          plan = @plans[ancestor.name]
-          return plan if plan
-        end
-        NONE
+        @plans.values_at(*klass.ancestors.map(&:name)).compact.first || NONE
       end
 
-      # Checks every plan before a stream starts: each named class is a
-      # loaded ActiveRecord model naming only associations and attributes
-      # it has. Reports every problem at once so one run fixes the plans.
+      # Every problem in every plan, so one run fixes them all.
       def validate!
-        problems = @plans.values.flat_map(&:problems)
+        problems = @plans.each_value.flat_map(&:problems)
         raise ConfigurationError, problems.join("\n") unless problems.empty?
       end
     end
 
-    def initialize(name = nil)
+    def initialize(name = nil, entries = {})
       @name = name
+      @entries = entries
+      @entries[name] = self if name
+      @resolved = {}
       @extra_associations = []
       @natural_key_attributes = []
       @omitted_fields = []
       @omitted_associations = []
-      @models = {}
     end
 
-    # DSL: additional association names to dump beyond the automatic
-    # belongs_to and has_one traversal. Additive across calls.
+    # DSL: association names to dump beyond the automatic belongs_to and
+    # has_one traversal. Additive across calls.
     def associations(*names)
       @extra_associations |= names.map(&:to_sym)
     end
@@ -53,12 +49,12 @@ module Deckard
     # DSL: attributes identifying an existing destination record to reuse.
     # Calling it again replaces the key.
     def natural_key(*attributes)
-      @natural_key_attributes = attributes.map(&:to_sym)
+      @natural_key_attributes = attributes.map(&:to_s)
     end
 
     # DSL: fields to exclude from dumped attributes. Additive across calls.
     def omit_fields(*names)
-      @omitted_fields |= names.map(&:to_sym)
+      @omitted_fields |= names.map(&:to_s)
     end
 
     # DSL: associations not to traverse. Additive across calls.
@@ -66,66 +62,54 @@ module Deckard
       @omitted_associations |= names.map(&:to_sym)
     end
 
-    # DSL: how a class this plan's dumps reach is dumped and matched.
+    # DSL: the entry for a class this plan's dumps reach.
     def model(name, &block)
-      (@models[name.to_s] ||= self.class.new(name.to_s)).instance_eval(&block)
+      (@entries[name.to_s] ||= self.class.new(name.to_s, @entries)).instance_eval(&block)
     end
 
-    # The part of this plan that applies to klass: the plan itself for its
-    # root, the `model` entry for a class it reaches, defaults otherwise.
+    # The entry that applies to klass, checked against it the first time.
     def for(klass)
-      klass.ancestors.each do |ancestor|
-        return self if ancestor.name == @name
-
-        entry = @models[ancestor.name]
-        return entry if entry
+      @resolved[klass] ||= (@entries.values_at(*klass.ancestors.map(&:name)).compact.first || NONE).tap do |entry|
+        problems = entry.problems_for(klass)
+        raise ConfigurationError, problems.join("\n") unless problems.empty?
       end
-      NONE
     end
 
     def problems
-      [self, *@models.values].filter_map do |config|
-        klass = begin
-          Object.const_get(config.name)
-        rescue NameError
-          nil
-        end
-        next "#{config.name.inspect} is named in a replicate block, but is not a loaded ActiveRecord model" unless klass.respond_to?(:replicate)
+      @entries.each_value.flat_map do |entry|
+        klass = entry.name.safe_constantize
+        next ["#{entry.name.inspect} is named in a replicate block, but is not a loaded ActiveRecord model"] unless klass.respond_to?(:replicate)
 
-        config.validate!(klass)
-        nil
-      rescue ConfigurationError, UnsupportedAssociation => e
-        e.message
+        entry.problems_for(klass)
       end
     end
 
-    # Raises unless every association this plan names exists on the model
-    # and is of a supported kind, and every attribute it names exists.
-    def validate!(model)
-      @extra_associations.each do |name|
+    # Everything this entry names that the model lacks or deckard cannot
+    # traverse.
+    def problems_for(model)
+      problems = @extra_associations.filter_map do |name|
         reflection = model.reflect_on_association(name)
-        raise ConfigurationError, "#{model} has no #{name.inspect} association" unless reflection
-
-        if reflection.macro == :has_and_belongs_to_many
-          raise UnsupportedAssociation,
-            "#{model}.#{name} is a has_and_belongs_to_many association, " \
+        if reflection.nil?
+          "#{model} has no #{name.inspect} association"
+        elsif reflection.macro == :has_and_belongs_to_many
+          "#{model}.#{name} is a has_and_belongs_to_many association, " \
             "which deckard does not support; use an explicit join model and replicate that association instead"
-        end
-        if reflection.macro == :has_many && reflection.through_reflection
-          raise UnsupportedAssociation,
-            "#{model}.#{name} is a has_many :through association, " \
+        elsif reflection.macro == :has_many && reflection.through_reflection
+          "#{model}.#{name} is a has_many :through association, " \
             "which deckard does not support; replicate :#{reflection.through_reflection.name} instead"
         end
       end
-
-      (@natural_key_attributes + @omitted_fields).each do |attribute|
-        next if model.abstract_class? || model.attribute_names.include?(attribute.to_s)
-
-        raise ConfigurationError, "#{model} has no #{attribute.inspect} attribute"
+      attributes = @natural_key_attributes + @omitted_fields
+      unless attributes.empty? || model.abstract_class?
+        missing = attributes - model.attribute_names
+        problems += missing.map { |attribute| "#{model} has no #{attribute.inspect} attribute" }
+      end
+      problems + (@natural_key_attributes & @omitted_fields).map do |attribute|
+        "#{model} names #{attribute.inspect} as both a natural key attribute and an omitted field"
       end
     end
 
-    # The plan for a class nothing declared: defaults only.
+    # The entry for a class nothing declared: defaults only.
     NONE = new.freeze
   end
 end

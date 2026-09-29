@@ -32,7 +32,7 @@ module Deckard
       end
 
       def load_by_natural_key
-        lookup = @natural_key.to_h { |attribute| [attribute, @attributes[attribute]] }
+        lookup = @attributes.slice(*@natural_key)
         matches = @model.where(lookup).limit(2).to_a
 
         case matches.size

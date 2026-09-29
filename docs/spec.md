@@ -230,10 +230,12 @@ The `-r` option requires a Ruby file before evaluating or loading anything:
 deckard -r ./config/environment -d "User.find(1)"
 ```
 
-This normally boots Rails and loads the application’s model classes. After
-requiring the file, Deckard eager loads the application (through Zeitwerk,
-when present) so every model’s `replicate` block has run, and validates the
-plans (section 7.5) before any dump or load begins.
+This normally boots Rails and loads the application’s model classes. Before a
+dump, Deckard eager loads the application (through Zeitwerk, when present) so
+every model’s `replicate` block has run, and validates every plan (section
+7.5) before any record is written. A load consults no plan: each record
+arrives with its natural key (section 9.2), so the destination's `replicate`
+blocks are neither loaded nor checked.
 
 ### 6.3 Dump scripts
 
@@ -597,14 +599,15 @@ does not silently remove or rewrite fields.
 
 ### 7.5 Plan validation
 
-The plan is validated as a whole before a stream starts. The `deckard`
-executable eager loads the application after requiring it, so every
-`replicate` block has run, then checks the entire plan: each class named by
-`model` must be a loaded ActiveRecord model, each configured association must
-exist and be of a supported kind, and each natural-key or omitted attribute
-must exist. Validation reports every problem at once as a
-`ConfigurationError` before any record is dumped or loaded. Dumping through
-the Ruby API validates each model's plan when its first record is dumped.
+Plans are validated before a stream starts. The `deckard` executable eager
+loads the application after requiring it, so every `replicate` block has run,
+then checks every plan: each class named by `model` must be a loaded
+ActiveRecord model, each configured association must exist and be of a
+supported kind, and each natural-key or omitted attribute must exist.
+Validation reports every problem at once as a `ConfigurationError` before any
+record is dumped. Dumping through the Ruby API checks each entry when the
+first record of its class is dumped. A load validates nothing: it needs no
+plan.
 
 ## 8. Traversal behavior
 
@@ -1025,7 +1028,6 @@ Deckard::ConfigurationError
 Deckard::DumpError
 Deckard::OutputError
 Deckard::LoadError
-Deckard::UnsupportedAssociation
 Deckard::UnresolvedReference
 Deckard::InvalidStream
 Deckard::InsertError
@@ -1034,7 +1036,7 @@ Deckard::InsertError
 Errors should include enough context to identify the problem:
 
 ```text
-Deckard::UnsupportedAssociation:
+Deckard::ConfigurationError:
 Author.bookmarked_posts is a has_and_belongs_to_many association, which deckard does not support
 ```
 
@@ -1121,8 +1123,8 @@ Responsibilities:
 
 - Parse `-r`, `-d`, and `-l`.
 - Reserve standard output for the stream before requiring the application.
-- Require the application environment, then eager load it.
-- Validate every plan before streaming.
+- Require the application environment.
+- Before a dump, eager load the application and validate every plan.
 - Evaluate dump expressions and scripts.
 - Connect standard input and output to the dumper or loader.
 - Return useful process statuses.
@@ -1149,12 +1151,12 @@ Responsibilities:
 
 ### `Deckard::ModelConfig`
 
-- Hold one root's plan: its own associations, optional natural key, and
-  field and association omissions, plus a `model` entry of the same shape
-  for each class its dumps reach, whether or not those classes have loaded.
+- Hold one root's plan as one table of entries, the root's included: each
+  entry's associations, optional natural key, and field and association
+  omissions, for classes that may not have loaded yet.
 - Back the `replicate do ... end` DSL.
 - Resolve the plan for a root, and the entry for a reached class, through
-  their ancestors.
+  their ancestors, checking each entry against its class once.
 - Validate every plan on demand, reporting every problem.
 
 ### `Deckard::ActiveRecord`
@@ -1164,7 +1166,9 @@ Responsibilities:
 - Implement ActiveRecord `load_replicant`.
 - Add nothing else to model classes: those three are the only methods
   Deckard defines on `ActiveRecord::Base`. Traversal and loading are plain
-  objects inside the module, not private model methods.
+  objects inside the module, not private model methods. Records reached
+  from a root are dumped by its plan directly, so an ActiveRecord model's
+  override of `dump_replicant` applies to roots only.
 - Traverse supported reflections.
 - Encode foreign-key references.
 - Insert or update rows without callbacks.

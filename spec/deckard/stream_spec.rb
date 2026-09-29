@@ -208,6 +208,27 @@ RSpec.describe "Deckard stream" do
       .to raise_error(Deckard::LoadError, /String does not implement load_replicant/)
   end
 
+  it "rejects a frame without a natural key, including the old three-element tuple" do
+    [["FakeAuthor", 1, {"name" => "Rob"}], ["FakeAuthor", 1, {"name" => "Rob"}, nil]].each do |frame|
+      io = StringIO.new
+      Marshal.dump(Deckard::STREAM_HEADER, io)
+      Marshal.dump(frame, io)
+      Marshal.dump(Deckard::STREAM_END, io)
+      io.rewind
+
+      expect { Deckard::Loader.new(io).load }.to raise_error(Deckard::InvalidStream, /malformed stream frame/)
+    end
+  end
+
+  it "rejects a stream from an earlier protocol version" do
+    io = StringIO.new
+    Marshal.dump([:deckard, 1], io)
+    Marshal.dump(Deckard::STREAM_END, io)
+    io.rewind
+
+    expect { Deckard::Loader.new(io).load }.to raise_error(Deckard::InvalidStream, /invalid stream header/)
+  end
+
   it "raises InvalidStream on a malformed frame without printing attribute values" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)

@@ -1,32 +1,11 @@
 # frozen_string_literal: true
 
-require "stringio"
 require_relative "../support/database_cleaner"
 require_relative "../support/forum_models"
 
 RSpec.describe "replicate model DSL", :db do
   def create_author(username, name = username.capitalize)
     Author.create!(username: username, name: name)
-  end
-
-  def stream(objects)
-    io = StringIO.new
-    dumper = Deckard::Dumper.new(io)
-    Array(objects).each { |object| dumper.dump(object) }
-    dumper.complete
-    io.rewind
-    [io, dumper]
-  end
-
-  def frames(io)
-    io.rewind
-    result = []
-    loop do
-      frame = Marshal.load(io)
-      break if frame == Deckard::STREAM_END
-      result << frame unless frame == Deckard::STREAM_HEADER
-    end
-    result
   end
 
   it "dumps has_many associations the plan names" do
@@ -47,10 +26,8 @@ RSpec.describe "replicate model DSL", :db do
 
     io, _ = stream(category)
 
-    category_frame = frames(io).find { |type, _, _| type == "Category" }
-    expect(category_frame[2]).not_to have_key("moderator_notes")
+    expect(frames(io).sole[2]).not_to have_key("moderator_notes")
 
-    io.rewind
     category.update_columns(slug: "general-source")
     Deckard::Loader.new(io).load
     expect(Category.where.not(id: category.id).sole.moderator_notes).to be_nil
@@ -63,47 +40,67 @@ RSpec.describe "replicate model DSL", :db do
     expect(dumper.counts).to eq("AnnouncementCategory" => 1)
     expect(frames(io).sole[2]).not_to have_key("moderator_notes")
 
-    io.rewind
     Deckard::Loader.new(io).load
     expect(Category.sole).to eq(category)
   end
 
-  it "raises ConfigurationError when a plan names a missing association" do
+  it "raises ConfigurationError listing every problem in the root's entry" do
     broken = MisconfiguredCategory.create!(name: "broken", slug: "broken")
 
-    expect { stream(broken) }.to raise_error(Deckard::ConfigurationError, "MisconfiguredCategory has no :moderators association")
+    expect { stream(broken) }.to raise_error(
+      Deckard::ConfigurationError,
+      "MisconfiguredCategory has no :moderators association\nMisconfiguredCategory has no \"handle\" attribute"
+    )
   end
 
   it "applies the root's entry for a class defined after it" do
-    expect(Deckard::ModelConfig.plan_for(Post).for(Comment).extra_associations).to eq([:replies])
+    author = create_author("rachael")
+    post = Post.create!(author: author, title: "Nexus-6 field notes")
+    comment = Comment.create!(post: post, author: author, body: "Have you ever retired a human by mistake?")
+    Mention.create!(comment: comment, mentioned_username: "rachael")
 
+    # Only Post's entry for Comment names mentions.
+    _, dumper = stream(post)
+    expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Comment" => 1, "Mention" => 1)
+  end
+
+  it "dumps a reached class by the root's entry, not by that class's own plan" do
+    author = Author.create!(username: "rachael", name: "Rachael", private_notes: "unicorn dream")
+    category = Category.create!(name: "General", slug: "general", moderator_notes: "watch for spam")
+    post = Post.create!(author: author, category: category, title: "Nexus-6 field notes")
+
+    io, _ = stream(post)
+    frames = frames(io)
+
+    # Category's own plan omits moderator_notes; Post's entry for it does not.
+    category_frame = frames.find { |type, _, _| type == "Category" }
+    expect(category_frame[2]["moderator_notes"]).to eq("watch for spam")
+    expect(category_frame[3]).to eq(["slug"])
+    # Author's own plan carries private_notes; Post's entry for it omits them.
+    author_frame = frames.find { |type, _, _| type == "Author" }
+    expect(author_frame[2]).not_to have_key("private_notes")
+    expect(author_frame[2]).not_to have_key("api_token")
+    expect(frames(stream(author).first).first[2]["private_notes"]).to eq("unicorn dream")
+  end
+
+  it "does not let another root's entry leak into a class's own plan" do
     author = create_author("rachael")
     post = Post.create!(author: author, title: "Nexus-6 field notes")
     question = Comment.create!(post: post, author: author, body: "Have you ever retired a human by mistake?")
     Comment.create!(post: post, author: author, parent: question, body: "I'm not in the business.")
 
-    _, dumper = stream(post)
-    expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Comment" => 2)
-  end
-
-  it "dumps a reached class by the root's plan, not by that class's own block" do
-    author = create_author("rachael")
-    category = Category.create!(name: "General", slug: "general", moderator_notes: "watch for spam")
-    post = Post.create!(author: author, category: category, title: "Nexus-6 field notes")
-
-    io, _ = stream(post)
-
-    # Category's own plan omits moderator_notes; Post's entry for it does not.
-    category_frame = frames(io).find { |type, _, _| type == "Category" }
-    expect(category_frame[2]["moderator_notes"]).to eq("watch for spam")
-    expect(category_frame[3]).to eq(["slug"])
+    # Post's entry for Comment names replies; Comment's own plan does not.
+    _, dumper = stream(question)
+    expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Comment" => 1)
   end
 
   it "validates every plan, reporting every problem at once" do
     expect { Deckard::ModelConfig.validate! }.to raise_error(Deckard::ConfigurationError) do |error|
       expect(error.message.lines.map(&:chomp)).to contain_exactly(
-        '"Moderator" is named in a replicate block, but is not a loaded ActiveRecord model',
         "MisconfiguredCategory has no :moderators association",
+        'MisconfiguredCategory has no "handle" attribute',
+        '"Moderator" is named in a replicate block, but is not a loaded ActiveRecord model',
+        "Post.tags is a has_many :through association, which deckard does not support; replicate :post_tags instead",
         "Bookmarker.bookmarked_posts is a has_and_belongs_to_many association, " \
           "which deckard does not support; use an explicit join model and replicate that association instead",
         "Commenter.commented_posts is a has_many :through association, " \
@@ -135,7 +132,6 @@ RSpec.describe "replicate model DSL", :db do
     expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Donation" => 1)
     expect(frames(io).last[2]).not_to have_key("post_id")
 
-    io.rewind
     Deckard::Loader.new(io).load
 
     expect(Donation.where.not(id: donation.id).sole.post_id).to be_nil
@@ -169,6 +165,20 @@ RSpec.describe "replicate model DSL", :db do
     Deckard::Loader.new(io).load
 
     expect(Author.sole.username).to eq("rob")
+  end
+
+  it "matches by the natural key the record travels with, not the destination's plan" do
+    Tag.create!(name: "replicants", slug: "replicants")
+    io = StringIO.new
+    Marshal.dump(Deckard::STREAM_HEADER, io)
+    Marshal.dump(["Tag", 1, {"name" => "replicants", "slug" => "replicants-2"}, []], io)
+    Marshal.dump(Deckard::STREAM_END, io)
+    io.rewind
+
+    # Tag's own plan says natural_key :name; the record carries no key.
+    Deckard::Loader.new(io).load
+
+    expect(Tag.where(name: "replicants").pluck(:slug)).to match_array(%w[replicants replicants-2])
   end
 
   it "fails and rolls back when the natural key is ambiguous" do
