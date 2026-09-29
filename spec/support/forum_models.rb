@@ -107,6 +107,9 @@ class Post < ActiveRecord::Base
       natural_key :slug
       omit_fields :moderator_notes
     end
+    model "Tag" do
+      natural_key :name
+    end
   end
 end
 
@@ -123,10 +126,6 @@ end
 class Tag < ActiveRecord::Base
   has_many :post_tags
   has_many :posts, through: :post_tags
-
-  replicate do
-    natural_key :name
-  end
 end
 
 class PostTag < ActiveRecord::Base
