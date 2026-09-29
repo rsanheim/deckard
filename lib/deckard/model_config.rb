@@ -1,44 +1,34 @@
 # frozen_string_literal: true
 
 module Deckard
-  # Backs the `replicate do ... end` model DSL. One instance per model class,
-  # keyed by class name. A subclass copies its superclass's configuration
-  # when its own config is first touched, so mutating one class never
-  # mutates another. A block declared for another model via `model` is held
-  # until that class first asks for its configuration, so a root model can
-  # name classes that load after it.
+  # The replication plan. A root model's `replicate do ... end` block
+  # declares the plan for itself and, through `model`, for every class its
+  # dumps reach. Plans are keyed by class name; a class without one follows
+  # its nearest ancestor with one, so STI subclasses need no declaration.
   class ModelConfig
     attr_reader :extra_associations, :natural_key_attributes, :omitted_fields, :omitted_associations
 
     @configs = {}
-    @declared = Hash.new { |declared, name| declared[name] = [] }
 
     class << self
-      # The chain of parent configurations stops at the first ancestor
-      # without the `replicate` DSL, which is ActiveRecord::Base's own
-      # superclass.
-      def for(klass)
-        @configs[klass.name] ||= begin
-          config = new(klass.superclass.respond_to?(:replicate) ? self.for(klass.superclass) : nil)
-          @declared.delete(klass.name)&.each { |block| config.instance_eval(&block) }
-          config
-        end
-      end
-
+      # Declarations for one name add up, whichever roots make them.
       def declare(name, &block)
-        if (config = @configs[name])
-          config.instance_eval(&block)
-        else
-          @declared[name] << block
-        end
+        (@configs[name] ||= new).instance_eval(&block)
       end
 
-      # Checks every configuration in the process before a stream starts:
-      # each declared model is a loaded ActiveRecord class, and each names
-      # only associations and attributes it has. Reports every problem at
-      # once so one run fixes the whole plan.
+      def for(klass)
+        klass.ancestors.each do |ancestor|
+          config = @configs[ancestor.name]
+          return config if config
+        end
+        NONE
+      end
+
+      # Checks the whole plan before a stream starts: each declared name is a
+      # loaded ActiveRecord model naming only associations and attributes it
+      # has. Reports every problem at once so one run fixes the plan.
       def validate!
-        problems = @declared.keys.filter_map do |name|
+        problems = @configs.filter_map do |name, config|
           klass = begin
             Object.const_get(name)
           rescue NameError
@@ -46,13 +36,10 @@ module Deckard
           end
           next "#{name.inspect} is named in a replicate block, but is not a loaded ActiveRecord model" unless klass.respond_to?(:replicate)
 
-          self.for(klass)
+          config.validate!(klass)
           nil
-        end
-        @configs.each do |name, config|
-          config.validate!(Object.const_get(name))
         rescue ConfigurationError, UnsupportedAssociation => e
-          problems << e.message
+          e.message
         end
         raise ConfigurationError, problems.join("\n") unless problems.empty?
       end
@@ -74,11 +61,11 @@ module Deckard
       end
     end
 
-    def initialize(parent = nil)
-      @extra_associations = parent ? parent.extra_associations.dup : []
-      @natural_key_attributes = parent ? parent.natural_key_attributes.dup : []
-      @omitted_fields = parent ? parent.omitted_fields.dup : []
-      @omitted_associations = parent ? parent.omitted_associations.dup : []
+    def initialize
+      @extra_associations = []
+      @natural_key_attributes = []
+      @omitted_fields = []
+      @omitted_associations = []
     end
 
     # DSL: additional association names to dump beyond the automatic
@@ -88,7 +75,7 @@ module Deckard
     end
 
     # DSL: attributes identifying an existing destination record to reuse.
-    # Calling it again (e.g. in a subclass) replaces the key.
+    # Calling it again replaces the key.
     def natural_key(*attributes)
       @natural_key_attributes = attributes.map(&:to_sym)
     end
@@ -103,15 +90,13 @@ module Deckard
       @omitted_associations.concat(names.map(&:to_sym))
     end
 
-    # DSL: configuration for another model, given by class name, exactly as
-    # if written in that model's own replicate block. Lets one root model
-    # hold the configuration for every model its dumps reach.
+    # DSL: the plan for another class its dumps reach, by class name.
     def model(name, &block)
       self.class.declare(name.to_s, &block)
     end
 
-    # Raises unless every association and attribute this configuration
-    # names exists on the model.
+    # Raises unless every association and attribute this plan names exists
+    # on the model.
     def validate!(model)
       @extra_associations.each do |name|
         reflection = model.reflect_on_association(name)
@@ -127,5 +112,8 @@ module Deckard
         raise ConfigurationError, "#{model} names #{attribute.inspect} in its replicate configuration, but no such attribute exists"
       end
     end
+
+    # The plan for a class nothing declared: defaults only.
+    NONE = new.freeze
   end
 end

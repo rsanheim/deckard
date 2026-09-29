@@ -18,9 +18,9 @@ module Deckard
     end
 
     module ClassMethods
-      # The `replicate do ... end` model DSL.
+      # The `replicate do ... end` DSL: this model's replication plan.
       def replicate(&block)
-        ModelConfig.for(self).instance_eval(&block)
+        ModelConfig.declare(name, &block)
       end
 
       # Load one streamed replicant: reuse an existing row when a natural key

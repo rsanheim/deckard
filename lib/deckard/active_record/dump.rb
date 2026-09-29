@@ -4,10 +4,10 @@ module Deckard
   module ActiveRecord
     # Dumps one record and its dependencies. Traversal order: belongs_to
     # associations, the record itself, has_one associations, then
-    # associations configured via `replicate` or per-dump options. has_many
+    # associations named by the plan or per-dump options. has_many
     # associations are never followed automatically. Per-dump options apply
     # to the record handed to Dumper#dump only; records reached from it are
-    # dumped with their own model configuration.
+    # dumped with their own plan.
     class Dump
       # Stored generated columns (GENERATED ALWAYS AS ... STORED) are never
       # dumped: the destination database computes them, and PostgreSQL

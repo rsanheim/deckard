@@ -348,7 +348,32 @@ Deckard adds one configuration method to ActiveRecord models:
 
 ```ruby
 replicate do
-  # Deckard configuration
+  # the replication plan
+end
+```
+
+A dump starts from one model, and the developer configuring it thinks from
+that model outward. The `replicate` block on that root model is the plan for
+the whole dump: what the root carries, and, through `model`, how every class
+the dump reaches is dumped and matched. One file describes the graph:
+
+```ruby
+class Order < ActiveRecord::Base
+  belongs_to :customer
+  has_many :line_items
+
+  replicate do
+    associations :line_items
+
+    model "LineItem" do
+      associations :adjustments
+    end
+
+    model "Customer" do
+      natural_key :email
+      omit_fields :password_digest
+    end
+  end
 end
 ```
 
@@ -361,6 +386,14 @@ omit_fields
 omit_associations
 model
 ```
+
+`model` takes a class name and a block offering the other four. Plans are
+keyed by class name, so the root never forces the classes it names to load
+first, and the loader finds the plan for a type whatever dump produced it.
+Declarations for one name add up, whichever roots make them. A class nothing
+declared follows its nearest ancestor with a plan, so STI subclasses need no
+declaration of their own; a class with no such ancestor is dumped with the
+defaults below.
 
 There is no `Deckard.configure` block and no separate model concern that applications must include.
 
@@ -410,7 +443,7 @@ replicate do
 end
 ```
 
-Deckard does not add nested association declarations. Deeper traversal is expressed through configuration on the associated model or through explicit calls in a dump script.
+Deckard does not add nested association declarations. Deeper traversal is expressed in the root's plan, model by model, or through explicit calls in a dump script.
 
 For example:
 
@@ -418,12 +451,10 @@ For example:
 class Repository < ActiveRecord::Base
   replicate do
     associations :issues
-  end
-end
 
-class Issue < ActiveRecord::Base
-  replicate do
-    associations :comments
+    model "Issue" do
+      associations :comments
+    end
   end
 end
 ```
@@ -448,7 +479,7 @@ dump User.all, associations: [:email_addresses]
 
 These associations are combined with those declared in the model’s `replicate` block,
 for the objects passed to that `dump` call only. Records reached through the traversal
-are dumped with their own model configuration and no per-dump options, as in the
+are dumped with their own plan and no per-dump options, as in the
 original `replicate`. A dump script expresses a deeper cascade with further `dump`
 calls; the identity set keeps every record in the stream once:
 
@@ -465,7 +496,7 @@ This remains a Ruby API used by dump scripts. It does not become a CLI option.
 
 By default, the loader creates a new destination record and assigns it a new destination primary key.
 
-A model can define a natural key when existing destination records should be reused:
+A plan can define a natural key when existing destination records should be reused:
 
 ```ruby
 class User < ActiveRecord::Base
@@ -475,14 +506,10 @@ class User < ActiveRecord::Base
   replicate do
     natural_key :login
     associations :email_addresses
-  end
-end
 
-class EmailAddress < ActiveRecord::Base
-  belongs_to :user
-
-  replicate do
-    natural_key :user_id, :email
+    model "EmailAddress" do
+      natural_key :user_id, :email
+    end
   end
 end
 ```
@@ -593,63 +620,16 @@ configuration and, like per-dump associations, apply only to the objects passed 
 implementation. The generic `dump(object, options = {})` API remains unchanged and
 passes its options to each root object's replicant implementation.
 
-### 7.7 Configuration inheritance
+### 7.7 Plan validation
 
-Deckard model configuration follows ActiveRecord inheritance:
-
-- A subclass begins with its superclass’s configuration.
-- Additional associations, field omissions, and association omissions are additive.
-- A subclass may define its own natural key.
-- Mutating a subclass’s configuration must not mutate the superclass’s configuration.
-
-Deckard does not attempt special dispatch for complicated STI collections in v1.0.
-
-### 7.8 Configuration from a root model
-
-A dump usually starts from one model, and the developer configuring it thinks
-from that model outward. `model` lets that root model hold the configuration
-for every model its dumps reach, so one file describes the whole graph:
-
-```ruby
-class Order < ActiveRecord::Base
-  belongs_to :customer
-  has_many :line_items
-
-  replicate do
-    associations :line_items
-
-    model "LineItem" do
-      associations :adjustments
-    end
-
-    model "Customer" do
-      natural_key :email
-      omit_fields :password_digest
-    end
-  end
-end
-```
-
-`model` takes a class name and a block offering the same methods. The block
-configures that class exactly as its own `replicate` block would: the
-configuration is global to the class, not scoped to dumps rooted at the
-declaring model, and it combines additively with anything the class declares
-itself. This keeps one configuration per model, which the loader needs: natural
-keys apply when a record of that type is loaded, whatever dump produced it.
-
-Classes are named as strings so the declaring model never forces the others to
-load first. A block declared for a class that has not loaded yet applies when
-that class first asks for its configuration.
-
-Model configuration is a plan, validated as a whole before a stream starts.
-The `deckard` executable eager loads the application after requiring it, so
-every `replicate` block has run, then checks the entire configuration: each
-class named by `model` must be a loaded ActiveRecord model, each configured
-association must exist and be of a supported kind, and each natural-key or
-omitted attribute must exist. Validation reports every problem at once as a
+The plan is validated as a whole before a stream starts. The `deckard`
+executable eager loads the application after requiring it, so every
+`replicate` block has run, then checks the entire plan: each class named by
+`model` must be a loaded ActiveRecord model, each configured association must
+exist and be of a supported kind, and each natural-key or omitted attribute
+must exist. Validation reports every problem at once as a
 `ConfigurationError` before any record is dumped or loaded. Dumping through
-the Ruby API validates each model's configuration when its first record is
-dumped.
+the Ruby API validates each model's plan when its first record is dumped.
 
 ## 8. Traversal behavior
 
@@ -1192,13 +1172,12 @@ Responsibilities:
 
 ### `Deckard::ModelConfig`
 
-- Store associations.
-- Store the optional natural key.
-- Store field omissions and association omissions separately.
-- Implement inheritance without shared mutable arrays.
-- Back the `replicate do ... end` model DSL, including `model` blocks
-  declared from a root model for classes that may load later.
-- Validate the whole configuration on demand, reporting every problem.
+- Hold the plan for one class name: associations, the optional natural key,
+  and field and association omissions, stored separately.
+- Back the `replicate do ... end` DSL, including `model` blocks for the
+  classes a root's dumps reach, whether or not those classes have loaded.
+- Resolve a class's plan through its ancestors.
+- Validate the whole plan on demand, reporting every problem.
 
 ### `Deckard::ActiveRecord`
 
@@ -1285,7 +1264,7 @@ end
 
 causes the configured collection to be included.
 
-### 18.5a Root-model configuration
+### 18.5a Root-model plan
 
 ```ruby
 class Order < ActiveRecord::Base
@@ -1298,10 +1277,10 @@ class Order < ActiveRecord::Base
 end
 ```
 
-configures `LineItem` as its own `replicate` block would, whether `LineItem`
-loads before or after `Order`, and a configuration naming a missing class,
-association, or attribute fails with `ConfigurationError` before any record
-is dumped or loaded through the executable.
+dumps each line item's adjustments whether `LineItem` loads before or after
+`Order`, and a plan naming a missing class, association, or attribute fails
+with `ConfigurationError` before any record is dumped or loaded through the
+executable.
 
 ### 18.6 Per-dump association configuration
 
@@ -1521,7 +1500,7 @@ Deckard v1.0 will:
 - Preserve the original `replicate` command shape.
 - Use `deckard` as the gem and executable name.
 - Use `Deckard` as the Ruby namespace.
-- Use `replicate do ... end` for namespaced model configuration.
+- Use `replicate do ... end` on a root model as the plan for everything its dumps reach.
 - Expose only `associations`, `natural_key`, `omit_fields`, `omit_associations`, and `model` inside that block.
 - Retain dump expressions and ordinary Ruby dump scripts.
 - Retain `dump_replicant` and `load_replicant`.
@@ -1537,7 +1516,7 @@ Deckard v1.0 will:
 
 The governing product test is simple:
 
-> A developer who remembers the original `replicate` gem should be able to use Deckard immediately, with the model configuration now gathered into one small `replicate` block.
+> A developer who remembers the original `replicate` gem should be able to use Deckard immediately, with the whole plan for a dump gathered into one `replicate` block on its root model.
 
 ## Historical API baseline
 

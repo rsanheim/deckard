@@ -56,7 +56,7 @@ RSpec.describe "replicate model DSL", :db do
     expect(Category.where.not(id: category.id).sole.moderator_notes).to be_nil
   end
 
-  it "inherits replicate configuration in subclasses" do
+  it "applies the nearest ancestor's plan to a subclass" do
     category = AnnouncementCategory.create!(name: "Announcements", slug: "announcements", moderator_notes: "pin sparingly")
 
     io, dumper = stream(category)
@@ -74,7 +74,7 @@ RSpec.describe "replicate model DSL", :db do
     expect { stream(broken) }.to raise_error(Deckard::ConfigurationError, /MisconfiguredCategory names :moderators/)
   end
 
-  it "applies configuration a root model declares for a class defined after it" do
+  it "applies a root model's plan for a class defined after it" do
     expect(Deckard::ModelConfig.for(Comment).extra_associations).to eq([:replies])
 
     author = create_author("rachael")
@@ -86,14 +86,14 @@ RSpec.describe "replicate model DSL", :db do
     expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Comment" => 2)
   end
 
-  it "applies configuration a root model declares for an already configured class" do
+  it "applies a root model's plan for a class defined before it" do
     config = Deckard::ModelConfig.for(Category)
 
     expect(config.natural_key_attributes).to eq([:slug])
     expect(config.omitted_fields).to eq([:moderator_notes])
   end
 
-  it "validates the whole configuration, reporting every problem at once" do
+  it "validates the whole plan, reporting every problem at once" do
     expect { Deckard::ModelConfig.validate! }.to raise_error(Deckard::ConfigurationError) do |error|
       expect(error.message.lines.map(&:chomp)).to contain_exactly(
         '"Moderator" is named in a replicate block, but is not a loaded ActiveRecord model',

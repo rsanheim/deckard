@@ -34,34 +34,33 @@ class Author < ActiveRecord::Base
     @callbacks_fired ||= []
   end
 
+  # An author is a dump root: the plan for an author's activity, including
+  # the models it reaches, lives here. Re-importing an author updates the
+  # one profile and the emails already present.
   replicate do
     natural_key :username
+    model "Profile" do
+      natural_key :author_id
+    end
+    model "AuthorEmail" do
+      natural_key :author_id, :address
+    end
+    model "Attachment" do
+      associations :variants
+    end
   end
 end
 
 class Profile < ActiveRecord::Base
   belongs_to :author
-
-  # One profile per author: re-importing an author updates the profile.
-  replicate do
-    natural_key :author_id
-  end
 end
 
 class AuthorEmail < ActiveRecord::Base
   belongs_to :author
-
-  replicate do
-    natural_key :author_id, :address
-  end
 end
 
 class Category < ActiveRecord::Base
   has_many :posts
-
-  replicate do
-    natural_key :slug
-  end
 end
 
 class AnnouncementCategory < Category
@@ -96,15 +95,16 @@ class Post < ActiveRecord::Base
     join_table: "bookmarks",
     association_foreign_key: "author_id"
 
-  # A post is a dump root, so it holds the configuration for the models a
-  # post dump reaches: Comment is declared before its class exists, Category
-  # after its own replicate block already ran.
+  # A post is a dump root: the plan for a post and the models a post dump
+  # reaches lives here. Comment is named before its class is defined,
+  # Category after.
   replicate do
     associations :comments
     model "Comment" do
       associations :replies
     end
     model "Category" do
+      natural_key :slug
       omit_fields :moderator_notes
     end
   end
@@ -150,10 +150,6 @@ end
 class Attachment < ActiveRecord::Base
   belongs_to :author
   has_many :variants, class_name: "AttachmentVariant"
-
-  replicate do
-    associations :variants
-  end
 end
 
 class AttachmentVariant < ActiveRecord::Base

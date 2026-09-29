@@ -103,24 +103,9 @@ rolls back and nothing is committed.
 
 ## Model configuration
 
-```ruby
-class User < ActiveRecord::Base
-  belongs_to :profile
-  has_many :email_addresses
-
-  replicate do
-    associations :email_addresses   # opt this has_many into dumps
-    natural_key :login              # reuse an existing destination row
-    omit_fields :encrypted_password # keep a field out of the stream
-    omit_associations :profile      # do not traverse this association
-  end
-end
-```
-
-One model usually stands at the root of a dump, and that model can hold the
-configuration for every model the dump reaches. `model` takes a class name
-and a block with the same four methods, and configures that class exactly as
-its own `replicate` block would:
+A dump starts from one model, and that model's `replicate` block is the plan
+for the whole dump: what the root carries, and how every model the dump
+reaches is dumped and matched.
 
 ```ruby
 class Order < ActiveRecord::Base
@@ -128,7 +113,10 @@ class Order < ActiveRecord::Base
   has_many :line_items
 
   replicate do
-    associations :line_items
+    associations :line_items       # opt this has_many into dumps
+    natural_key :number            # reuse an existing destination row
+    omit_fields :internal_notes    # keep a field out of the stream
+    omit_associations :warehouse   # do not traverse this association
 
     model "LineItem" do
       associations :adjustments
@@ -142,28 +130,31 @@ class Order < ActiveRecord::Base
 end
 ```
 
-Classes are named as strings so the root model never forces the others to
-load first; a block declared for a class that has not loaded yet applies
-when it does. Before dumping or loading, the `deckard` executable eager
-loads the application so every `replicate` block has run, then validates
-the whole configuration: each named class must be a loaded ActiveRecord
-model, and each named association and attribute must exist on it. A bad
-configuration fails there, reporting every problem at once, before any
-record is dumped or loaded.
+`model` takes a class name and a block with the same four methods. Plans are
+keyed by class name, so the root never forces the classes it names to load
+first, and the loader finds the plan for a type whatever dump produced it. A
+class nothing declared follows its nearest ancestor with a plan, so STI
+subclasses need nothing of their own.
+
+Before dumping or loading, the `deckard` executable eager loads the
+application so every `replicate` block has run, then validates the whole
+plan: each named class must be a loaded ActiveRecord model, and each named
+association and attribute must exist on it. A bad plan fails there, reporting
+every problem at once, before any record is dumped or loaded.
 
 A dump call can also add associations or omissions for just that dump. They apply
 to the objects passed to that call only; records reached from them are dumped with
-their own model configuration. Express a deeper cascade with further `dump` calls,
-and each record still lands in the stream once:
+their own plan. Express a deeper cascade with further `dump` calls, and each
+record still lands in the stream once:
 
 ```ruby
-dump User.all,
-  associations: [:email_addresses],
+dump Order.all,
+  associations: [:shipments],
   omit_fields: [:created_at],
-  omit_associations: [:profile]
+  omit_associations: [:warehouse]
 
-dump user, associations: [:posts]
-dump user.posts, associations: [:comments]
+dump order, associations: [:shipments]
+dump order.shipments, associations: [:events]
 ```
 
 ## Security
