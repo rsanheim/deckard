@@ -25,8 +25,8 @@ RSpec.describe "deckard CLI" do
     expect(status.exitstatus).to eq(0)
     io = StringIO.new(out)
     expect(Marshal.load(io)).to eq(Deckard::STREAM_HEADER)
-    expect(Marshal.load(io)).to eq(["CliWidget", 1, {"name" => "flux"}])
-    expect(Marshal.load(io)).to eq(["CliWidget", 2, {"name" => "capacitor"}])
+    expect(Marshal.load(io)).to eq(["CliWidget", 1, {"name" => "flux"}, []])
+    expect(Marshal.load(io)).to eq(["CliWidget", 2, {"name" => "capacitor"}, []])
     expect(Marshal.load(io)).to eq(Deckard::STREAM_END)
     expect(io.eof?).to be(true)
     expect(err).to include("dumped 2 total objects")
@@ -78,7 +78,7 @@ RSpec.describe "deckard CLI" do
     expect(err).to include("dumped 1 total objects")
     io = StringIO.new(out)
     expect(Marshal.load(io)).to eq(Deckard::STREAM_HEADER)
-    expect(Marshal.load(io)).to eq(["CliWidget", 1, {"name" => "flux"}])
+    expect(Marshal.load(io)).to eq(["CliWidget", 1, {"name" => "flux"}, []])
     expect(Marshal.load(io)).to eq(Deckard::STREAM_END)
   end
 
@@ -131,8 +131,8 @@ RSpec.describe "deckard CLI" do
     expect(err).to include("dumped 2 total objects")
     io = StringIO.new(out)
     expect(Marshal.load(io)).to eq(Deckard::STREAM_HEADER)
-    expect(Marshal.load(io)).to eq(["CliWidget", 1, {"name" => "flux"}])
-    expect(Marshal.load(io)).to eq(["CliWidget", 2, {"name" => "capacitor"}])
+    expect(Marshal.load(io)).to eq(["CliWidget", 1, {"name" => "flux"}, []])
+    expect(Marshal.load(io)).to eq(["CliWidget", 2, {"name" => "capacitor"}, []])
     expect(Marshal.load(io)).to eq(Deckard::STREAM_END)
     expect(io.eof?).to be(true)
   end
@@ -186,7 +186,7 @@ RSpec.describe "deckard CLI" do
   it "exits nonzero with the error on a truncated stream" do
     truncated = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, truncated)
-    Marshal.dump(["CliWidget", 1, {"name" => "cut off"}], truncated)
+    Marshal.dump(["CliWidget", 1, {"name" => "cut off"}, []], truncated)
 
     Tempfile.create("deckard-cli-out") do |out_file|
       _, err, status = run_deckard("-r", fixture, "-l",

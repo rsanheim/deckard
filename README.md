@@ -54,7 +54,7 @@ associations. `has_many` collections are only dumped when opted in (see
 below) — they can pull in a large slice of the database.
 
 For more involved selection, pass a Ruby file instead of an expression. The
-script runs in a context exposing `dump(object, options = {})`:
+script runs in a context exposing `dump(object)`:
 
 ```ruby
 # config/deckard/dump-stuff.rb
@@ -130,32 +130,20 @@ class Order < ActiveRecord::Base
 end
 ```
 
-`model` takes a class name and a block with the same four methods. Plans are
-keyed by class name, so the root never forces the classes it names to load
-first, and the loader finds the plan for a type whatever dump produced it. A
-class nothing declared follows its nearest ancestor with a plan, so STI
-subclasses need nothing of their own.
+`model` takes a class name and a block with the same four methods. A dump
+follows its root's plan and nothing else: `dump Order.find(1)` uses Order's
+block for every record it reaches, and `dump LineItem.find(1)` uses
+LineItem's. A reached class's own block is not consulted, so there is nothing
+to merge and no precedence to learn. Classes are named as strings, so the
+root never forces them to load first, and an STI subclass follows the entry
+for its nearest declared ancestor. Each record travels with the natural key
+its plan gave it, so the destination needs no plan of its own.
 
 Before dumping or loading, the `deckard` executable eager loads the
 application so every `replicate` block has run, then validates the whole
 plan: each named class must be a loaded ActiveRecord model, and each named
 association and attribute must exist on it. A bad plan fails there, reporting
 every problem at once, before any record is dumped or loaded.
-
-A dump call can also add associations or omissions for just that dump. They apply
-to the objects passed to that call only; records reached from them are dumped with
-their own plan. Express a deeper cascade with further `dump` calls, and each
-record still lands in the stream once:
-
-```ruby
-dump Order.all,
-  associations: [:shipments],
-  omit_fields: [:created_at],
-  omit_associations: [:warehouse]
-
-dump order, associations: [:shipments]
-dump order.shipments, associations: [:events]
-```
 
 ## Security
 

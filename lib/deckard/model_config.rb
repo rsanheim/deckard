@@ -1,56 +1,47 @@
 # frozen_string_literal: true
 
 module Deckard
-  # The replication plan. A root model's `replicate do ... end` block
-  # declares the plan for itself and, through `model`, for every class its
-  # dumps reach. Plans are keyed by class name; a class without one follows
-  # its nearest ancestor with one, so STI subclasses need no declaration.
+  # A replication plan. A model's `replicate do ... end` block is the plan
+  # for dumps rooted at that model: what the root carries and, through
+  # `model`, how each class those dumps reach is dumped and matched. A dump
+  # follows its root's plan only; a reached class's own block is not
+  # consulted. Classes are matched through their ancestors, so an STI
+  # subclass follows the entry for its nearest declared ancestor.
   class ModelConfig
-    attr_reader :extra_associations, :natural_key_attributes, :omitted_fields, :omitted_associations
+    attr_reader :name, :extra_associations, :natural_key_attributes, :omitted_fields, :omitted_associations
 
-    @configs = {}
+    @plans = {}
 
     class << self
-      # Declarations for one name add up, whichever roots make them.
       def declare(name, &block)
-        (@configs[name] ||= new).instance_eval(&block)
+        @plans[name] = new(name).tap { |plan| plan.instance_eval(&block) }
       end
 
-      def for(klass)
+      # The plan for a dump rooted at klass.
+      def plan_for(klass)
         klass.ancestors.each do |ancestor|
-          config = @configs[ancestor.name]
-          return config if config
+          plan = @plans[ancestor.name]
+          return plan if plan
         end
         NONE
       end
 
-      # Checks the whole plan before a stream starts: each declared name is a
-      # loaded ActiveRecord model naming only associations and attributes it
-      # has. Reports every problem at once so one run fixes the plan.
+      # Checks every plan before a stream starts: each named class is a
+      # loaded ActiveRecord model naming only associations and attributes
+      # it has. Reports every problem at once so one run fixes the plans.
       def validate!
-        problems = @configs.filter_map do |name, config|
-          klass = begin
-            Object.const_get(name)
-          rescue NameError
-            nil
-          end
-          next "#{name.inspect} is named in a replicate block, but is not a loaded ActiveRecord model" unless klass.respond_to?(:replicate)
-
-          config.validate!(klass)
-          nil
-        rescue ConfigurationError, UnsupportedAssociation => e
-          e.message
-        end
+        problems = @plans.values.flat_map(&:problems)
         raise ConfigurationError, problems.join("\n") unless problems.empty?
       end
-
     end
 
-    def initialize
+    def initialize(name = nil)
+      @name = name
       @extra_associations = []
       @natural_key_attributes = []
       @omitted_fields = []
       @omitted_associations = []
+      @models = {}
     end
 
     # DSL: additional association names to dump beyond the automatic
@@ -75,20 +66,37 @@ module Deckard
       @omitted_associations |= names.map(&:to_sym)
     end
 
-    # DSL: the plan for another class its dumps reach, by class name.
+    # DSL: how a class this plan's dumps reach is dumped and matched.
     def model(name, &block)
-      self.class.declare(name.to_s, &block)
+      (@models[name.to_s] ||= self.class.new(name.to_s)).instance_eval(&block)
     end
 
-    # This plan plus one dump call's options (associations, omit_fields,
-    # omit_associations), for the records handed to that call.
-    def with(options)
-      plan = self.class.new
-      plan.associations(*@extra_associations, *options[:associations])
-      plan.natural_key(*@natural_key_attributes)
-      plan.omit_fields(*@omitted_fields, *options[:omit_fields])
-      plan.omit_associations(*@omitted_associations, *options[:omit_associations])
-      plan
+    # The part of this plan that applies to klass: the plan itself for its
+    # root, the `model` entry for a class it reaches, defaults otherwise.
+    def for(klass)
+      klass.ancestors.each do |ancestor|
+        return self if ancestor.name == @name
+
+        entry = @models[ancestor.name]
+        return entry if entry
+      end
+      NONE
+    end
+
+    def problems
+      [self, *@models.values].filter_map do |config|
+        klass = begin
+          Object.const_get(config.name)
+        rescue NameError
+          nil
+        end
+        next "#{config.name.inspect} is named in a replicate block, but is not a loaded ActiveRecord model" unless klass.respond_to?(:replicate)
+
+        config.validate!(klass)
+        nil
+      rescue ConfigurationError, UnsupportedAssociation => e
+        e.message
+      end
     end
 
     # Raises unless every association this plan names exists on the model

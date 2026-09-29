@@ -2,7 +2,7 @@
 
 RSpec.describe Deckard::ModelConfig do
   it "accumulates associations and both omission types additively across calls" do
-    config = Deckard::ModelConfig.new
+    config = Deckard::ModelConfig.new("Widget")
     config.associations :emails
     config.associations :memberships, :teams
     config.omit_fields :created_at
@@ -15,7 +15,7 @@ RSpec.describe Deckard::ModelConfig do
   end
 
   it "replaces the natural key when defined again" do
-    config = Deckard::ModelConfig.new
+    config = Deckard::ModelConfig.new("Widget")
     config.natural_key :login
     config.natural_key :user_id, :email
 

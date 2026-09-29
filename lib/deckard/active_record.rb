@@ -13,21 +13,21 @@ module Deckard
       base.extend ClassMethods
     end
 
-    def dump_replicant(dumper, options = {})
-      Dump.new(self, dumper, options).call
+    def dump_replicant(dumper)
+      Dump.new(self, dumper, ModelConfig.plan_for(self.class)).call
     end
 
     module ClassMethods
-      # The `replicate do ... end` DSL: this model's replication plan.
+      # The `replicate do ... end` DSL: the plan for dumps rooted here.
       def replicate(&block)
         ModelConfig.declare(name, &block)
       end
 
-      # Load one streamed replicant: reuse an existing row when a natural key
-      # matches, otherwise insert a new row with a destination-generated
+      # Load one streamed replicant: reuse an existing row when its natural
+      # key matches, otherwise insert a new row with a destination-generated
       # primary key. Both paths bypass validations and callbacks.
-      def load_replicant(type, source_id, attributes)
-        Load.new(self, type, source_id, attributes).call
+      def load_replicant(type, source_id, attributes, natural_key)
+        Load.new(self, type, source_id, attributes, natural_key).call
       end
     end
   end

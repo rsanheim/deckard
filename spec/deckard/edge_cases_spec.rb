@@ -13,10 +13,10 @@ RSpec.describe "ActiveRecord edge cases", :db do
     Author.create!(username: username, name: name)
   end
 
-  def stream(objects, options = {})
+  def stream(objects)
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)
-    Array(objects).each { |object| dumper.dump(object, options) }
+    Array(objects).each { |object| dumper.dump(object) }
     dumper.complete
     io.rewind
     [io, dumper]
@@ -69,8 +69,8 @@ RSpec.describe "ActiveRecord edge cases", :db do
     expect(new_followup.parent.parent.parent).to be_nil
   end
 
-  it "dumps a record first when its parent's configured collection points back at it" do
-    # Variant -> Attachment (belongs_to) -> variants (configured has_many)
+  it "dumps a record first when its parent's planned collection points back at it" do
+    # Variant -> Attachment (belongs_to) -> variants (planned has_many)
     # -> Variant again is a diamond, not a cycle: the attachment still
     # precedes the variant.
     author = create_author("rachael")
@@ -184,7 +184,7 @@ RSpec.describe "ActiveRecord edge cases", :db do
   it "raises a clear error loading into a composite primary key model" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
-    Marshal.dump(["PostView", 1, {"post_id" => 1, "viewed_on" => Date.new(2026, 9, 1), "count" => 42}], io)
+    Marshal.dump(["PostView", 1, {"post_id" => 1, "viewed_on" => Date.new(2026, 9, 1), "count" => 42}, []], io)
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 

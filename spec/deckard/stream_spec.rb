@@ -23,11 +23,11 @@ class FakeAuthor
     @name = name
   end
 
-  def dump_replicant(dumper, options = {})
-    dumper.write(self.class, id, {"name" => name}, self)
+  def dump_replicant(dumper)
+    dumper.write(self.class, id, {"name" => name})
   end
 
-  def self.load_replicant(type, source_id, attributes)
+  def self.load_replicant(type, source_id, attributes, natural_key)
     author = new(id: next_id, name: attributes["name"])
     self.next_id += 1
     store[author.id] = author
@@ -55,16 +55,16 @@ class FakePost
     @author_id = author_id
   end
 
-  def dump_replicant(dumper, options = {})
-    dumper.dump(author, options)
+  def dump_replicant(dumper)
+    dumper.dump(author)
     attributes = {
       "title" => title,
       "author_id" => [:id, FakeAuthor.name, author.id]
     }
-    dumper.write(self.class, id, attributes, self)
+    dumper.write(self.class, id, attributes)
   end
 
-  def self.load_replicant(type, source_id, attributes)
+  def self.load_replicant(type, source_id, attributes, natural_key)
     post = new(id: next_id, title: attributes["title"], author_id: attributes["author_id"])
     self.next_id += 1
     store[post.id] = post
@@ -176,7 +176,7 @@ RSpec.describe "Deckard stream" do
   it "raises UnresolvedReference with context when a reference precedes its object" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
-    Marshal.dump(["FakePost", 50, {"title" => "Orphan", "author_id" => [:id, "FakeAuthor", 1]}], io)
+    Marshal.dump(["FakePost", 50, {"title" => "Orphan", "author_id" => [:id, "FakeAuthor", 1]}, []], io)
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 
@@ -189,7 +189,7 @@ RSpec.describe "Deckard stream" do
   it "raises LoadError when the streamed type is not a defined class" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
-    Marshal.dump(["NoSuchClass", 1, {}], io)
+    Marshal.dump(["NoSuchClass", 1, {}, []], io)
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 
@@ -200,7 +200,7 @@ RSpec.describe "Deckard stream" do
   it "raises LoadError when the streamed class does not implement load_replicant" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
-    Marshal.dump(["String", 1, {}], io)
+    Marshal.dump(["String", 1, {}, []], io)
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 
@@ -211,7 +211,7 @@ RSpec.describe "Deckard stream" do
   it "raises InvalidStream on a malformed frame without printing attribute values" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
-    Marshal.dump(["FakeAuthor", 1, "sensitive-not-a-hash"], io)
+    Marshal.dump(["FakeAuthor", 1, "sensitive-not-a-hash", []], io)
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 

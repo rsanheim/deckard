@@ -11,10 +11,10 @@ RSpec.describe "canonical forum graph", db: :multiple do
     DeckardTestDatabase::Tasks.load_seed
   end
 
-  def dump(object, options = {})
+  def dump(object)
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)
-    dumper.dump(object, options)
+    dumper.dump(object)
     dumper.complete
     io.rewind
     [io, dumper]
@@ -101,10 +101,12 @@ RSpec.describe "canonical forum graph", db: :multiple do
   it "clones an author's forum activity into another database" do
     source_author = Author.find_by!(username: "rachael")
     source_snapshot = author_snapshot(source_author)
-    stream, dumper = dump(source_author, associations: %i[posts author_emails reactions donations attachments])
+    stream, dumper = dump(source_author)
 
-    # Her own posts plus the one she reacted to; every comment under them.
-    expect(dumper.counts).to include("Author" => 3, "Post" => 3, "Comment" => 5, "AttachmentVariant" => 2)
+    # Her own posts and the one she reacted to, and every author reached
+    # along the way carries their activity by the same plan: the whole
+    # forum comes along, every comment included.
+    expect(dumper.counts).to include("Author" => 3, "Post" => 4, "Comment" => 6, "AttachmentVariant" => 2)
 
     DeckardTestDatabase.with_destination do
       loader = Deckard::Loader.new(stream)

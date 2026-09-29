@@ -4,11 +4,12 @@ module Deckard
   module ActiveRecord
     # Loads one replicant tuple into a model's table.
     class Load
-      def initialize(model, type, source_id, attributes)
+      def initialize(model, type, source_id, attributes, natural_key)
         @model = model
         @type = type
         @source_id = source_id
         @attributes = attributes
+        @natural_key = natural_key
       end
 
       def call
@@ -16,8 +17,7 @@ module Deckard
           raise LoadError, "#{@model.name} has a composite primary key, which deckard does not support"
         end
 
-        key = ModelConfig.for(@model).natural_key_attributes
-        key.empty? ? insert : load_by_natural_key(key)
+        @natural_key.empty? ? insert : load_by_natural_key
       end
 
       private
@@ -31,8 +31,8 @@ module Deckard
           "#{@type} source_id=#{@source_id} could not be inserted: #{Deckard.error_detail(e)}"
       end
 
-      def load_by_natural_key(key)
-        lookup = key.to_h { |attribute| [attribute.to_s, @attributes[attribute.to_s]] }
+      def load_by_natural_key
+        lookup = @natural_key.to_h { |attribute| [attribute, @attributes[attribute]] }
         matches = @model.where(lookup).limit(2).to_a
 
         case matches.size

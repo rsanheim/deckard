@@ -13,15 +13,14 @@ module Deckard
     end
 
     # Evaluation context for dump scripts and -d expressions: exposes only
-    # dump(object, options). Scripts see any extra command-line arguments
-    # in ARGV.
+    # dump(object). Scripts see any extra command-line arguments in ARGV.
     class DumpScript
       def initialize(dumper)
         @dumper = dumper
       end
 
-      def dump(object, options = {})
-        @dumper.dump(object, options)
+      def dump(object)
+        @dumper.dump(object)
       end
     end
 

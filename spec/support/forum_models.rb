@@ -3,7 +3,8 @@
 require "active_record"
 
 # The forum models behind the gem's ActiveRecord specs, backed by the schema
-# in spec/db/schema.rb. Defining them touches no database.
+# in spec/db/schema.rb. Defining them touches no database. Each replicate
+# block is the whole plan for dumps rooted at that model.
 
 class Author < ActiveRecord::Base
   has_one :profile
@@ -34,16 +35,25 @@ class Author < ActiveRecord::Base
     @callbacks_fired ||= []
   end
 
-  # An author is a dump root: the plan for an author's activity, including
-  # the models it reaches, lives here. Re-importing an author updates the
-  # one profile and the emails already present.
+  # An author's forum activity, matched on the destination by username;
+  # the one profile and the emails already present are updated in place.
   replicate do
     natural_key :username
+    associations :posts, :author_emails, :reactions, :donations, :attachments
     model "Profile" do
       natural_key :author_id
     end
     model "AuthorEmail" do
       natural_key :author_id, :address
+    end
+    model "Post" do
+      associations :comments
+    end
+    model "Comment" do
+      associations :replies
+    end
+    model "Category" do
+      natural_key :slug
     end
     model "Attachment" do
       associations :variants
@@ -57,19 +67,30 @@ end
 
 class AuthorEmail < ActiveRecord::Base
   belongs_to :author
+
+  replicate do
+    natural_key :author_id, :address
+    model "Author" do
+      natural_key :username
+    end
+  end
 end
 
 class Category < ActiveRecord::Base
   has_many :posts
+
+  replicate do
+    natural_key :slug
+    omit_fields :moderator_notes
+  end
 end
 
 class AnnouncementCategory < Category
 end
 
-# Deliberately broken: its replicate block names an association that does
-# not exist, which must raise at dump time, and declares configuration for
-# a model that does not exist, which whole-configuration validation must
-# report.
+# Deliberately broken: its plan names an association that does not exist,
+# which must raise at dump time, and a model that does not exist, which
+# whole-plan validation must report.
 class MisconfiguredCategory < ActiveRecord::Base
   self.table_name = "categories"
 
@@ -78,6 +99,31 @@ class MisconfiguredCategory < ActiveRecord::Base
     model "Moderator" do
       natural_key :login
     end
+  end
+end
+
+# Deliberately unsupported plans, over the authors table: a selected
+# has_and_belongs_to_many and a selected has_many :through.
+class Bookmarker < ActiveRecord::Base
+  self.table_name = "authors"
+  has_and_belongs_to_many :bookmarked_posts,
+    class_name: "Post",
+    join_table: "bookmarks",
+    foreign_key: "author_id",
+    association_foreign_key: "post_id"
+
+  replicate do
+    associations :bookmarked_posts
+  end
+end
+
+class Commenter < ActiveRecord::Base
+  self.table_name = "authors"
+  has_many :comments, foreign_key: :author_id
+  has_many :commented_posts, through: :comments, source: :post
+
+  replicate do
+    associations :commented_posts
   end
 end
 
@@ -90,25 +136,22 @@ class Post < ActiveRecord::Base
   has_many :reactions, as: :reactable
   has_many :donations
   has_many :post_views
-  has_and_belongs_to_many :bookmarking_authors,
-    class_name: "Author",
-    join_table: "bookmarks",
-    association_foreign_key: "author_id"
 
-  # A post is a dump root: the plan for a post and the models a post dump
-  # reaches lives here. Comment is named before its class is defined,
-  # Category after.
+  # A post and its comment threads. Comment is named before its class is
+  # defined, Category after; Category's own plan is not consulted here.
   replicate do
     associations :comments
     model "Comment" do
       associations :replies
     end
+    model "Author" do
+      natural_key :username
+    end
+    model "Profile" do
+      natural_key :author_id
+    end
     model "Category" do
       natural_key :slug
-      omit_fields :moderator_notes
-    end
-    model "Tag" do
-      natural_key :name
     end
   end
 end
@@ -121,21 +164,51 @@ class Comment < ActiveRecord::Base
   has_many :replies, class_name: "Comment", foreign_key: :parent_id
   has_many :mentions
   has_many :reactions, as: :reactable
+
+  # A comment brings the whole thread on its post.
+  replicate do
+    model "Post" do
+      associations :comments
+    end
+    model "Author" do
+      natural_key :username
+    end
+  end
 end
 
 class Tag < ActiveRecord::Base
   has_many :post_tags
   has_many :posts, through: :post_tags
+
+  replicate do
+    natural_key :name
+  end
 end
 
 class PostTag < ActiveRecord::Base
   belongs_to :post
   belongs_to :tag
+
+  # The tag is left behind: its foreign key travels as-is.
+  replicate do
+    omit_associations :tag
+    model "Author" do
+      natural_key :username
+    end
+  end
 end
 
 class Reaction < ActiveRecord::Base
   belongs_to :author
   belongs_to :reactable, polymorphic: true
+
+  # The target is left behind: its polymorphic foreign key travels as-is.
+  replicate do
+    omit_associations :reactable
+    model "Author" do
+      natural_key :username
+    end
+  end
 end
 
 # A mention names its author by username, not by id: the foreign key targets
@@ -143,21 +216,52 @@ end
 class Mention < ActiveRecord::Base
   belongs_to :comment
   belongs_to :author, primary_key: :username, foreign_key: :mentioned_username
+
+  replicate do
+    model "Author" do
+      natural_key :username
+    end
+  end
 end
 
 # UUID primary keys, database-generated.
 class Attachment < ActiveRecord::Base
   belongs_to :author
   has_many :variants, class_name: "AttachmentVariant"
+
+  replicate do
+    associations :variants
+    model "Author" do
+      natural_key :username
+    end
+  end
 end
 
 class AttachmentVariant < ActiveRecord::Base
   belongs_to :attachment
+
+  # A variant brings its siblings: Variant -> Attachment -> variants.
+  replicate do
+    model "Attachment" do
+      associations :variants
+    end
+    model "Author" do
+      natural_key :username
+    end
+  end
 end
 
 class Donation < ActiveRecord::Base
   belongs_to :author
   belongs_to :post, optional: true
+
+  # The post travels, but the donation's link to it does not.
+  replicate do
+    omit_fields :post_id
+    model "Author" do
+      natural_key :username
+    end
+  end
 end
 
 # Composite primary key (derived from the schema): unsupported, must raise.

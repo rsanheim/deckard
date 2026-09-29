@@ -14,10 +14,10 @@ RSpec.describe "dependency cycles", :db do
     Author.create!(username: username, name: name)
   end
 
-  def stream(objects, options = {})
+  def stream(objects)
     io = StringIO.new
     dumper = Deckard::Dumper.new(io)
-    Array(objects).each { |object| dumper.dump(object, options) }
+    Array(objects).each { |object| dumper.dump(object) }
     dumper.complete
     io.rewind
     [io, dumper]

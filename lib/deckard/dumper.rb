@@ -18,17 +18,17 @@ module Deckard
     end
 
     # Dump one object, or each element of an enumerable. The object must
-    # implement dump_replicant(dumper, options) and write itself (and any
+    # implement dump_replicant(dumper) and write itself (and any
     # dependencies, first) via #write.
-    def dump(object, options = {})
+    def dump(object)
       return if object.nil?
 
       if object.respond_to?(:dump_replicant)
-        object.dump_replicant(self, options)
+        object.dump_replicant(self)
       elsif object.respond_to?(:find_each)
-        object.find_each { |item| dump(item, options) }
+        object.find_each { |item| dump(item) }
       elsif object.respond_to?(:each)
-        object.each { |item| dump(item, options) }
+        object.each { |item| dump(item) }
       else
         raise DumpError, "#{object.class} does not implement dump_replicant"
       end
@@ -60,12 +60,17 @@ module Deckard
     end
 
     # Called by dump_replicant implementations to emit one replicant tuple.
-    def write(type, id, attributes, _object)
+    # natural_key names the attributes by which the destination matches an
+    # existing record to reuse; empty means always insert.
+    def write(type, id, attributes, natural_key = [])
       type = type.to_s
+      unless natural_key.is_a?(Array)
+        raise DumpError, "#{type}(#{id}): natural key must be an array of attribute names, got #{natural_key.class}"
+      end
       return if @dumped.include?([type, id])
 
       @dumped.add([type, id])
-      write_frame([type, id, attributes])
+      write_frame([type, id, attributes, natural_key])
       @counts[type] += 1
       @after_write&.call(@counts)
     end

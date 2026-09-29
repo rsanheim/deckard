@@ -15,12 +15,12 @@ class PerfRecord
     @payload = payload
   end
 
-  def dump_replicant(dumper, options = {})
-    dumper.write(self.class, id, {"payload" => payload}, self)
+  def dump_replicant(dumper)
+    dumper.write(self.class, id, {"payload" => payload})
   end
 
   # Near-zero work: no store, no object allocation beyond the tuple.
-  def self.load_replicant(type, source_id, attributes)
+  def self.load_replicant(type, source_id, attributes, natural_key)
     [source_id + 1, nil]
   end
 end
@@ -32,15 +32,15 @@ class PerfConcurrencyRecord
     @id = id
   end
 
-  def dump_replicant(dumper, options = {})
-    dumper.write(self.class, id, {}, self)
+  def dump_replicant(dumper)
+    dumper.write(self.class, id, {})
   end
 
   class << self
     attr_accessor :loaded_count, :dumper_done
   end
 
-  def self.load_replicant(type, source_id, attributes)
+  def self.load_replicant(type, source_id, attributes, natural_key)
     self.loaded_count += 1
     [source_id + 1, nil]
   end
@@ -54,15 +54,15 @@ class PerfLargeAttributeRecord
     @payload = payload
   end
 
-  def dump_replicant(dumper, options = {})
-    dumper.write(self.class, id, {"payload" => payload}, self)
+  def dump_replicant(dumper)
+    dumper.write(self.class, id, {"payload" => payload})
   end
 
   class << self
     attr_accessor :loaded_payload
   end
 
-  def self.load_replicant(type, source_id, attributes)
+  def self.load_replicant(type, source_id, attributes, natural_key)
     self.loaded_payload = attributes["payload"]
     [source_id + 1, nil]
   end

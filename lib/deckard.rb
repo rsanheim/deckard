@@ -28,6 +28,6 @@ module Deckard
 
   # Stream protocol frames. The header opens every stream; the end marker
   # distinguishes a complete stream from one whose source died mid-dump.
-  STREAM_HEADER = [:deckard, 1].freeze
-  STREAM_END = [:deckard_end, 1].freeze
+  STREAM_HEADER = [:deckard, 2].freeze
+  STREAM_END = [:deckard_end, 2].freeze
 end

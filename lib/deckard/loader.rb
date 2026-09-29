@@ -3,7 +3,8 @@
 module Deckard
   # Reads a Deckard stream incrementally from an input IO, resolving
   # [:id, type, source_id] reference tuples through the source-to-destination
-  # ID map and handing each replicant to its class's load_replicant.
+  # ID map and handing each replicant, with the natural key it travels
+  # with, to its class's load_replicant.
   class Loader
     attr_reader :counts
 
@@ -56,13 +57,13 @@ module Deckard
     end
 
     def load_replicant(frame)
-      unless frame.is_a?(Array) && frame.size == 3 && frame[0].is_a?(String) && frame[2].is_a?(Hash)
-        raise InvalidStream, "malformed stream frame (expected [type, id, attributes] tuple)"
+      unless frame.is_a?(Array) && frame.size == 4 && frame[0].is_a?(String) && frame[2].is_a?(Hash) && frame[3].is_a?(Array)
+        raise InvalidStream, "malformed stream frame (expected [type, id, attributes, natural_key] tuple)"
       end
 
-      type, source_id, attributes = frame
+      type, source_id, attributes, natural_key = frame
       resolved = resolve_references(type, source_id, attributes)
-      destination_id, _object = replicant_class(type).load_replicant(type, source_id, resolved)
+      destination_id, _object = replicant_class(type).load_replicant(type, source_id, resolved, natural_key)
       @id_map[[type, source_id]] = destination_id
       @counts[type] += 1
       @after_load&.call(@counts)
