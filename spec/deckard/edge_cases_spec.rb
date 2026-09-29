@@ -69,23 +69,38 @@ RSpec.describe "ActiveRecord edge cases", :db do
     expect(new_followup.parent.parent.parent).to be_nil
   end
 
-  it "dumps a record first when its parent's planned collection points back at it" do
-    # Variant -> Attachment (belongs_to) -> variants (planned has_many)
-    # -> Variant again is a diamond, not a cycle: the attachment still
-    # precedes the variant.
+  it "carries a referenced parent as a row only, whatever its plan entry owns" do
+    # Variant -> Attachment (belongs_to): the attachment's own plan says
+    # attachments carry their variants, but it was reached by reference,
+    # so its other variant stays behind.
     author = create_author("rachael")
     attachment = Attachment.create!(author: author, filename: "esper-photo.png")
     variant = AttachmentVariant.create!(attachment: attachment, variant: "thumbnail")
-    other = AttachmentVariant.create!(attachment: attachment, variant: "enhanced")
+    AttachmentVariant.create!(attachment: attachment, variant: "enhanced")
 
     io, dumper = stream(variant)
-    expect(dumper.counts).to eq("Author" => 1, "Attachment" => 1, "AttachmentVariant" => 2)
+    expect(dumper.counts).to eq("Author" => 1, "Attachment" => 1, "AttachmentVariant" => 1)
 
     Deckard::Loader.new(io).load
 
     new_attachment = Attachment.where.not(id: attachment.id).sole
-    expect(new_attachment.variants.pluck(:variant)).to match_array(%w[thumbnail enhanced])
-    expect(AttachmentVariant.where.not(id: [variant.id, other.id]).pluck(:attachment_id).uniq).to eq([new_attachment.id])
+    expect(new_attachment.variants.pluck(:variant)).to eq(["thumbnail"])
+  end
+
+  it "expands a record dumped earlier as a dependency when it is later a root" do
+    rachael = create_author("rachael")
+    deckard = create_author("deckard")
+    post = Post.create!(author: deckard, title: "Unicorn origami")
+    Reaction.create!(author: rachael, reactable: post, kind: "like")
+    Comment.create!(post: post, author: deckard, body: "Noted.")
+
+    # rachael's reaction reaches deckard by reference: his row, not his
+    # posts. Dumping him next walks his collections; his row is not
+    # written twice.
+    io, dumper = stream([rachael, deckard])
+
+    expect(dumper.counts).to eq("Author" => 2, "Reaction" => 1, "Post" => 1, "Comment" => 1)
+    expect(frames(io).map(&:first)).to eq(%w[Author Author Post Reaction Comment])
   end
 
   it "references an STI subclass by its actual class in the stream" do

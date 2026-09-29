@@ -14,7 +14,7 @@ module Deckard
     end
 
     def dump_replicant(dumper)
-      Dump.new(self, dumper, ModelConfig.plan_for(self.class)).call
+      Dump.new(self, dumper, ModelConfig.plan_for(self.class), owned: true).call
     end
 
     module ClassMethods

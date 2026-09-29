@@ -391,11 +391,20 @@ follows its root's plan and nothing else: `dump Order` uses Order's block for
 every record it reaches, and `dump LineItem` uses LineItem's. A reached
 class's own `replicate` block is not consulted, so there is nothing to merge
 and no precedence to learn. A class the plan does not name is dumped with the
-defaults below. Within one plan, the settings for a class apply wherever that
-class appears, the root's own class included. Classes are named as strings,
-so the root never forces them to load first, and they are matched through
-their ancestors: an STI subclass follows the entry for its nearest declared
-ancestor.
+defaults below. Classes are named as strings, so the root never forces them
+to load first, and they are matched through their ancestors: an STI subclass
+follows the entry for its nearest declared ancestor.
+
+How a record was reached decides how much of its entry applies. A record
+reached as a root, or through `has_one` or a planned collection, is owned: it
+carries what its entry says. A record reached only through `belongs_to` is a
+dependency: it carries its row and its own dependencies, so foreign keys
+resolve, and nothing it owns, however its entry reads. A line item's product
+arrives as a row; the product's reviews do not, even if the plan says
+products carry reviews. This is what keeps a dump the size of the root's
+ownership tree instead of the connected component of the database. The same
+record dumped as a dependency first and as a root or owned record later is
+written once and then walked. See `docs/traversal.md`.
 
 Natural keys travel with the records: each replicant in the stream carries
 the attributes its plan matches it by (section 9.2), so the destination needs
@@ -407,9 +416,9 @@ There is no `Deckard.configure` block and no separate model concern that applica
 
 By default, dumping an ActiveRecord object includes:
 
-1. Its supported `belongs_to` associations.
+1. Its supported `belongs_to` associations, as dependencies.
 2. The object itself.
-3. Its supported `has_one` associations.
+3. Its supported `has_one` associations, when the object is owned (section 7).
 
 `has_many` associations are not included automatically because doing so can quickly pull in a large portion of the database.
 
@@ -602,13 +611,13 @@ the Ruby API validates each model's plan when its first record is dumped.
 The default ActiveRecord traversal order is:
 
 ```text
-belongs_to associations
+belongs_to associations          (dependencies: row and their own dependencies)
 current record
-has_one associations
-explicitly configured associations
+has_one associations             (owned records only)
+planned collections              (owned records only)
 ```
 
-This ordering ensures that a record normally appears after the records referenced by its foreign keys.
+This ordering ensures that a record normally appears after the records referenced by its foreign keys, and that only records the root owns, directly or through other owned records, open up their own collections.
 
 For example:
 
@@ -680,12 +689,10 @@ Deckard relies on reference ordering rather than disabling PostgreSQL constraint
 
 Ordinary inverse-association cycles are stopped by the dumped-object identity set.
 
-A record reached again while its own dump is in progress (through a parent’s
-configured collection, for example) is emitted at that point once its own parents are
-in the stream, as in the original `replicate`; the outer traversal’s later write is a
-no-op.
-
-A graph requiring a record to reference another new record that cannot be emitted first is unsupported in v1.0 and produces an error.
+A record reached again while its own dump is in progress can only have been
+reached through its dependencies, which means they lead back to it. That is a
+dependency cycle: a graph requiring a record to reference another new record
+that cannot be emitted first is unsupported in v1.0 and produces an error.
 
 Deckard does not add placeholder rows, deferred repair passes, or automatic constraint disabling to accommodate such graphs.
 
@@ -1186,6 +1193,7 @@ Deckard v1.0 must maintain these invariants:
 11. A stream without a successful-end marker does not commit.
 12. The loader never silently leaves an unresolved source foreign key in a destination row.
 13. Unsupported behavior raises rather than being approximated.
+14. A record reached only through `belongs_to` carries nothing it owns.
 
 ## 18. Acceptance criteria
 
@@ -1249,10 +1257,11 @@ end
 ```
 
 dumps each line item's adjustments whether `LineItem` loads before or after
-`Order`; `dump LineItem.first` follows LineItem's own block, not Order's; and
-a plan naming a missing class, association, or attribute fails with
-`ConfigurationError` before any record is dumped or loaded through the
-executable.
+`Order`; `dump LineItem.first` follows LineItem's own block, not Order's; a
+product reached from a line item arrives as a row without the collections
+its own entry names; and a plan naming a missing class, association, or
+attribute fails with `ConfigurationError` before any record is dumped or
+loaded through the executable.
 
 ### 18.7 ID remapping
 

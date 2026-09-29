@@ -165,11 +165,7 @@ class Comment < ActiveRecord::Base
   has_many :mentions
   has_many :reactions, as: :reactable
 
-  # A comment brings the whole thread on its post.
   replicate do
-    model "Post" do
-      associations :comments
-    end
     model "Author" do
       natural_key :username
     end
@@ -240,11 +236,7 @@ end
 class AttachmentVariant < ActiveRecord::Base
   belongs_to :attachment
 
-  # A variant brings its siblings: Variant -> Attachment -> variants.
   replicate do
-    model "Attachment" do
-      associations :variants
-    end
     model "Author" do
       natural_key :username
     end

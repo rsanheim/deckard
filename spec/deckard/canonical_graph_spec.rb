@@ -103,10 +103,9 @@ RSpec.describe "canonical forum graph", db: :multiple do
     source_snapshot = author_snapshot(source_author)
     stream, dumper = dump(source_author)
 
-    # Her own posts and the one she reacted to, and every author reached
-    # along the way carries their activity by the same plan: the whole
-    # forum comes along, every comment included.
-    expect(dumper.counts).to include("Author" => 3, "Post" => 4, "Comment" => 6, "AttachmentVariant" => 2)
+    # Her own posts with their comments, the post she reacted to as a row,
+    # and the authors those rows point at as rows: nothing they own.
+    expect(dumper.counts).to include("Author" => 3, "Post" => 3, "Comment" => 4, "AttachmentVariant" => 2)
 
     DeckardTestDatabase.with_destination do
       loader = Deckard::Loader.new(stream)
