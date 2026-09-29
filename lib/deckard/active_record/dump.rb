@@ -28,17 +28,13 @@ module Deckard
         @model = record.class
         @source_id = self.class.source_id(record)
         @dumper = dumper
-        @options = options
-        @config = ModelConfig.for(@model)
-        @omitted_fields = @config.omitted_fields + Array(options[:omit_fields]).map(&:to_sym)
-        @omitted_associations = @config.omitted_associations + Array(options[:omit_associations]).map(&:to_sym)
+        @plan = ModelConfig.for(@model).with(options)
       end
 
       def call
         @dumper.once(@model.name, @source_id) do
-          @config.validate!(@model)
-          validate_per_dump_associations!
-          attributes = @record.attributes.except(*GENERATED_COLUMNS[@model], *@omitted_fields.map(&:to_s))
+          @plan.validate!(@model)
+          attributes = @record.attributes.except(*GENERATED_COLUMNS[@model], *@plan.omitted_fields.map(&:to_s))
           dump_belongs_to(attributes)
           @dumper.write(@model.name, @source_id, attributes, @record)
           dump_has_one
@@ -51,7 +47,7 @@ module Deckard
       def dump_belongs_to(attributes)
         @model.reflect_on_all_associations(:belongs_to).each do |reflection|
           foreign_key = reflection.foreign_key.to_s
-          next if @omitted_associations.include?(reflection.name)
+          next if @plan.omitted_associations.include?(reflection.name)
           next if encode_dumped_parent(attributes, reflection, foreign_key)
 
           referenced = @record.public_send(reflection.name)
@@ -64,7 +60,7 @@ module Deckard
               "dependency cycle detected: #{@model}(#{@source_id}).#{reflection.name} " \
               "references #{referenced.class.name}(#{referenced_id}), which cannot be emitted first"
           end
-          next if @omitted_fields.include?(foreign_key.to_sym)
+          next if @plan.omitted_fields.include?(foreign_key.to_sym)
           # A belongs_to whose primary_key option targets a non-primary-key
           # column (belongs_to :account, primary_key: :login) carries a natural
           # value, not a source ID. It needs no remapping and must not be
@@ -86,41 +82,23 @@ module Deckard
         value = @record[foreign_key]
         return false if value.nil? || !@dumper.dumped?(reflection.klass.name, value)
 
-        attributes[foreign_key] = [:id, reflection.klass.name, value] unless @omitted_fields.include?(foreign_key.to_sym)
+        attributes[foreign_key] = [:id, reflection.klass.name, value] unless @plan.omitted_fields.include?(foreign_key.to_sym)
         true
       end
 
       def dump_has_one
         @model.reflect_on_all_associations(:has_one).each do |reflection|
-          next if @omitted_associations.include?(reflection.name)
+          next if @plan.omitted_associations.include?(reflection.name)
           dependent = @record.public_send(reflection.name)
           @dumper.dump(dependent) if dependent
         end
       end
 
-      def validate_per_dump_associations!
-        per_dump_associations.each do |name|
-          reflection = @model.reflect_on_association(name)
-          unless reflection
-            raise DumpError, "#{@model} has no #{name.inspect} association to dump"
-          end
-          ModelConfig.supported_association!(reflection, "#{@model}(#{@source_id})")
-        end
-      end
-
-      def per_dump_associations
-        Array(@options[:associations]).map(&:to_sym).reject do |name|
-          @omitted_associations.include?(name) || @config.extra_associations.include?(name)
-        end
-      end
-
       def dump_configured
-        @config.extra_associations.each do |name|
-          next if @omitted_associations.include?(name)
+        @plan.extra_associations.each do |name|
+          next if @plan.omitted_associations.include?(name)
           dump_association(name)
         end
-
-        per_dump_associations.each { |name| dump_association(name) }
       end
 
       def dump_association(name)

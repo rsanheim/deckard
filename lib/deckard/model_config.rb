@@ -44,21 +44,6 @@ module Deckard
         raise ConfigurationError, problems.join("\n") unless problems.empty?
       end
 
-      # `subject` names the model, with the record's source id when one is
-      # being dumped.
-      def supported_association!(reflection, subject)
-        if reflection.macro == :has_and_belongs_to_many
-          raise UnsupportedAssociation,
-            "#{subject}.#{reflection.name} is a has_and_belongs_to_many association, " \
-            "which deckard does not support; use an explicit join model and replicate that association instead"
-        end
-
-        return unless reflection.macro == :has_many && reflection.through_reflection
-
-        raise UnsupportedAssociation,
-          "#{subject}.#{reflection.name} is a has_many :through association, " \
-          "which deckard does not support; replicate :#{reflection.through_reflection.name} instead"
-      end
     end
 
     def initialize
@@ -71,7 +56,7 @@ module Deckard
     # DSL: additional association names to dump beyond the automatic
     # belongs_to and has_one traversal. Additive across calls.
     def associations(*names)
-      @extra_associations.concat(names.map(&:to_sym))
+      @extra_associations |= names.map(&:to_sym)
     end
 
     # DSL: attributes identifying an existing destination record to reuse.
@@ -82,12 +67,12 @@ module Deckard
 
     # DSL: fields to exclude from dumped attributes. Additive across calls.
     def omit_fields(*names)
-      @omitted_fields.concat(names.map(&:to_sym))
+      @omitted_fields |= names.map(&:to_sym)
     end
 
     # DSL: associations not to traverse. Additive across calls.
     def omit_associations(*names)
-      @omitted_associations.concat(names.map(&:to_sym))
+      @omitted_associations |= names.map(&:to_sym)
     end
 
     # DSL: the plan for another class its dumps reach, by class name.
@@ -95,21 +80,40 @@ module Deckard
       self.class.declare(name.to_s, &block)
     end
 
-    # Raises unless every association and attribute this plan names exists
-    # on the model.
+    # This plan plus one dump call's options (associations, omit_fields,
+    # omit_associations), for the records handed to that call.
+    def with(options)
+      plan = self.class.new
+      plan.associations(*@extra_associations, *options[:associations])
+      plan.natural_key(*@natural_key_attributes)
+      plan.omit_fields(*@omitted_fields, *options[:omit_fields])
+      plan.omit_associations(*@omitted_associations, *options[:omit_associations])
+      plan
+    end
+
+    # Raises unless every association this plan names exists on the model
+    # and is of a supported kind, and every attribute it names exists.
     def validate!(model)
       @extra_associations.each do |name|
         reflection = model.reflect_on_association(name)
-        unless reflection
-          raise ConfigurationError, "#{model} names #{name.inspect} in its replicate configuration, but no such association exists"
+        raise ConfigurationError, "#{model} has no #{name.inspect} association" unless reflection
+
+        if reflection.macro == :has_and_belongs_to_many
+          raise UnsupportedAssociation,
+            "#{model}.#{name} is a has_and_belongs_to_many association, " \
+            "which deckard does not support; use an explicit join model and replicate that association instead"
         end
-        self.class.supported_association!(reflection, model)
+        if reflection.macro == :has_many && reflection.through_reflection
+          raise UnsupportedAssociation,
+            "#{model}.#{name} is a has_many :through association, " \
+            "which deckard does not support; replicate :#{reflection.through_reflection.name} instead"
+        end
       end
 
       (@natural_key_attributes + @omitted_fields).each do |attribute|
         next if model.abstract_class? || model.attribute_names.include?(attribute.to_s)
 
-        raise ConfigurationError, "#{model} names #{attribute.inspect} in its replicate configuration, but no such attribute exists"
+        raise ConfigurationError, "#{model} has no #{attribute.inspect} attribute"
       end
     end
 

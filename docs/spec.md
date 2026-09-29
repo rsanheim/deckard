@@ -1058,7 +1058,7 @@ Errors should include enough context to identify the problem:
 
 ```text
 Deckard::UnsupportedAssociation:
-Author(812).bookmarked_posts is a has_and_belongs_to_many association, which deckard does not support
+Author.bookmarked_posts is a has_and_belongs_to_many association, which deckard does not support
 ```
 
 ```text
@@ -1068,7 +1068,7 @@ Order(500).user_id references User(1234), which has not been loaded
 
 ```text
 Deckard::ConfigurationError:
-Order names :line_item in its replicate configuration, but no such association exists
+Order has no :line_item association
 "Customr" is named in a replicate block, but is not a loaded ActiveRecord model
 ```
 

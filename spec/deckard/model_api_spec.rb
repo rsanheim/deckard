@@ -71,7 +71,7 @@ RSpec.describe "replicate model DSL", :db do
   it "raises ConfigurationError when a replicate block names a missing association" do
     broken = MisconfiguredCategory.create!(name: "broken", slug: "broken")
 
-    expect { stream(broken) }.to raise_error(Deckard::ConfigurationError, /MisconfiguredCategory names :moderators/)
+    expect { stream(broken) }.to raise_error(Deckard::ConfigurationError, "MisconfiguredCategory has no :moderators association")
   end
 
   it "applies a root model's plan for a class defined after it" do
@@ -97,7 +97,7 @@ RSpec.describe "replicate model DSL", :db do
     expect { Deckard::ModelConfig.validate! }.to raise_error(Deckard::ConfigurationError) do |error|
       expect(error.message.lines.map(&:chomp)).to contain_exactly(
         '"Moderator" is named in a replicate block, but is not a loaded ActiveRecord model',
-        "MisconfiguredCategory names :moderators in its replicate configuration, but no such association exists"
+        "MisconfiguredCategory has no :moderators association"
       )
     end
   end
@@ -114,11 +114,11 @@ RSpec.describe "replicate model DSL", :db do
     expect(dumper.counts).to eq("Author" => 1, "Post" => 1)
   end
 
-  it "raises DumpError when a per-dump association is missing on the dumped object" do
+  it "raises ConfigurationError when a per-dump association is missing on the dumped object" do
     author = create_author("rachael")
 
     expect { stream(author, associations: [:variants]) }
-      .to raise_error(Deckard::DumpError, /Author has no :variants association/)
+      .to raise_error(Deckard::ConfigurationError, "Author has no :variants association")
   end
 
   it "applies per-dump field and association omissions independently" do
