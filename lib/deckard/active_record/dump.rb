@@ -29,15 +29,15 @@ module Deckard
         @source_id = self.class.source_id(record)
         @dumper = dumper
         @options = options
-        config = ModelConfig.for(@model)
-        @configured_associations = config.extra_associations
-        @omitted_fields = config.omitted_fields + Array(options[:omit_fields]).map(&:to_sym)
-        @omitted_associations = config.omitted_associations + Array(options[:omit_associations]).map(&:to_sym)
+        @config = ModelConfig.for(@model)
+        @omitted_fields = @config.omitted_fields + Array(options[:omit_fields]).map(&:to_sym)
+        @omitted_associations = @config.omitted_associations + Array(options[:omit_associations]).map(&:to_sym)
       end
 
       def call
         @dumper.once(@model.name, @source_id) do
-          validate_selected_associations!
+          @config.validate!(@model)
+          validate_per_dump_associations!
           attributes = @record.attributes.except(*GENERATED_COLUMNS[@model], *@omitted_fields.map(&:to_s))
           dump_belongs_to(attributes)
           @dumper.write(@model.name, @source_id, attributes, @record)
@@ -98,50 +98,24 @@ module Deckard
         end
       end
 
-      # Every selected association must exist on this model: those named in
-      # the model's `replicate` block, and those passed for this dump call.
-      def validate_selected_associations!
-        @configured_associations.each do |name|
-          next if @omitted_associations.include?(name)
-
-          reflection = @model.reflect_on_association(name)
-          unless reflection
-            raise DumpError, "#{@model} names #{name.inspect} in its replicate block, but no such association exists"
-          end
-          validate_association!(reflection)
-        end
-
+      def validate_per_dump_associations!
         per_dump_associations.each do |name|
           reflection = @model.reflect_on_association(name)
           unless reflection
             raise DumpError, "#{@model} has no #{name.inspect} association to dump"
           end
-          validate_association!(reflection)
+          ModelConfig.supported_association!(reflection, "#{@model}(#{@source_id})")
         end
-      end
-
-      def validate_association!(reflection)
-        if reflection.macro == :has_and_belongs_to_many
-          raise UnsupportedAssociation,
-            "#{@model}(#{@source_id}).#{reflection.name} is a has_and_belongs_to_many association, " \
-            "which deckard does not support; use an explicit join model and replicate that association instead"
-        end
-
-        return unless reflection.macro == :has_many && reflection.through_reflection
-
-        raise UnsupportedAssociation,
-          "#{@model}(#{@source_id}).#{reflection.name} is a has_many :through association, " \
-          "which deckard does not support; replicate :#{reflection.through_reflection.name} instead"
       end
 
       def per_dump_associations
         Array(@options[:associations]).map(&:to_sym).reject do |name|
-          @omitted_associations.include?(name) || @configured_associations.include?(name)
+          @omitted_associations.include?(name) || @config.extra_associations.include?(name)
         end
       end
 
       def dump_configured
-        @configured_associations.each do |name|
+        @config.extra_associations.each do |name|
           next if @omitted_associations.include?(name)
           dump_association(name)
         end

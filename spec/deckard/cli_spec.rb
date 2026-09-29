@@ -33,6 +33,18 @@ RSpec.describe "deckard CLI" do
     expect(err).to include("CliWidget")
   end
 
+  it "eager loads the application before dumping or loading" do
+    _, err, status = run_deckard("-r", fixture, "-d", "WIDGETS")
+    expect(status.exitstatus).to eq(0)
+    expect(err).to include("LazyWidget loaded")
+
+    Tempfile.create("deckard-cli-out") do |out_file|
+      _, err, status = run_deckard("-r", fixture, "-l", stdin: "", env: {"DECKARD_CLI_OUT" => out_file.path})
+      expect(status.exitstatus).to eq(1)
+      expect(err).to include("LazyWidget loaded")
+    end
+  end
+
   it "loads a dumped stream from stdin" do
     dumped, _, _ = run_deckard("-r", fixture, "-d", "WIDGETS")
 

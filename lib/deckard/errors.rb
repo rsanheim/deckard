@@ -8,6 +8,8 @@ module Deckard
 
   class Error < StandardError; end
 
+  class ConfigurationError < Error; end
+
   class DumpError < Error; end
 
   class OutputError < DumpError; end

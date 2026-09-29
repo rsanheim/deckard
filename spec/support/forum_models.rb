@@ -61,7 +61,6 @@ class Category < ActiveRecord::Base
 
   replicate do
     natural_key :slug
-    omit_fields :moderator_notes
   end
 end
 
@@ -69,12 +68,17 @@ class AnnouncementCategory < Category
 end
 
 # Deliberately broken: its replicate block names an association that does
-# not exist, which must raise at dump time.
+# not exist, which must raise at dump time, and declares configuration for
+# a model that does not exist, which whole-configuration validation must
+# report.
 class MisconfiguredCategory < ActiveRecord::Base
   self.table_name = "categories"
 
   replicate do
     associations :moderators
+    model "Moderator" do
+      natural_key :login
+    end
   end
 end
 
@@ -92,9 +96,17 @@ class Post < ActiveRecord::Base
     join_table: "bookmarks",
     association_foreign_key: "author_id"
 
-  # A post always carries its comments.
+  # A post is a dump root, so it holds the configuration for the models a
+  # post dump reaches: Comment is declared before its class exists, Category
+  # after its own replicate block already ran.
   replicate do
     associations :comments
+    model "Comment" do
+      associations :replies
+    end
+    model "Category" do
+      omit_fields :moderator_notes
+    end
   end
 end
 
@@ -106,11 +118,6 @@ class Comment < ActiveRecord::Base
   has_many :replies, class_name: "Comment", foreign_key: :parent_id
   has_many :mentions
   has_many :reactions, as: :reactable
-
-  # A comment always carries the replies beneath it.
-  replicate do
-    associations :replies
-  end
 end
 
 class Tag < ActiveRecord::Base

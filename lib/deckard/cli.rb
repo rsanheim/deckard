@@ -34,7 +34,8 @@ module Deckard
     def run(argv)
       options = parse(argv)
       reserve_stdout if options[:dump]
-      require File.expand_path(options[:require]) if options[:require]
+      boot(options[:require]) if options[:require]
+      ModelConfig.validate!
 
       options[:dump] ? dump(options[:dump]) : load_stream(options)
       0
@@ -61,6 +62,15 @@ module Deckard
       $stdout = STDOUT
     end
     # rubocop:enable Style/GlobalStdStream
+
+    # Eager load after requiring the application so every replicate block,
+    # including configuration declared from another model's block, is
+    # registered before validation and streaming. Rails itself eager loads
+    # this way, but only when config.eager_load is on.
+    def boot(path)
+      require File.expand_path(path)
+      Zeitwerk::Loader.eager_load_all if defined?(Zeitwerk::Loader)
+    end
 
     def parse(argv)
       options = Optimist.options(argv) do

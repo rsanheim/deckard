@@ -15,3 +15,6 @@ gem "pg", "~> 1.6"
 gem "rspec", "~> 3.13"
 
 gem "standard", "~> 1.56"
+
+# The CLI specs prove eager loading through a real Zeitwerk loader.
+gem "zeitwerk", "~> 2.7"

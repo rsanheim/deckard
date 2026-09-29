@@ -117,6 +117,40 @@ class User < ActiveRecord::Base
 end
 ```
 
+One model usually stands at the root of a dump, and that model can hold the
+configuration for every model the dump reaches. `model` takes a class name
+and a block with the same four methods, and configures that class exactly as
+its own `replicate` block would:
+
+```ruby
+class Order < ActiveRecord::Base
+  belongs_to :customer
+  has_many :line_items
+
+  replicate do
+    associations :line_items
+
+    model "LineItem" do
+      associations :adjustments
+    end
+
+    model "Customer" do
+      natural_key :email
+      omit_fields :password_digest
+    end
+  end
+end
+```
+
+Classes are named as strings so the root model never forces the others to
+load first; a block declared for a class that has not loaded yet applies
+when it does. Before dumping or loading, the `deckard` executable eager
+loads the application so every `replicate` block has run, then validates
+the whole configuration: each named class must be a loaded ActiveRecord
+model, and each named association and attribute must exist on it. A bad
+configuration fails there, reporting every problem at once, before any
+record is dumped or loaded.
+
 A dump call can also add associations or omissions for just that dump. They apply
 to the objects passed to that call only; records reached from them are dumped with
 their own model configuration. Express a deeper cascade with further `dump` calls,

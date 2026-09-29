@@ -231,7 +231,10 @@ The `-r` option requires a Ruby file before evaluating or loading anything:
 deckard -r ./config/environment -d "User.find(1)"
 ```
 
-This normally boots Rails and loads the application’s model classes.
+This normally boots Rails and loads the application’s model classes. After
+requiring the file, Deckard eager loads the application (through Zeitwerk,
+when present) so every model’s `replicate` block has run, and validates the
+whole model configuration (section 7.8) before any dump or load begins.
 
 ### 6.3 Dump scripts
 
@@ -349,13 +352,14 @@ replicate do
 end
 ```
 
-The block provides four methods in v1.0:
+The block provides five methods in v1.0:
 
 ```ruby
 associations
 natural_key
 omit_fields
 omit_associations
+model
 ```
 
 There is no `Deckard.configure` block and no separate model concern that applications must include.
@@ -599,6 +603,53 @@ Deckard model configuration follows ActiveRecord inheritance:
 - Mutating a subclass’s configuration must not mutate the superclass’s configuration.
 
 Deckard does not attempt special dispatch for complicated STI collections in v1.0.
+
+### 7.8 Configuration from a root model
+
+A dump usually starts from one model, and the developer configuring it thinks
+from that model outward. `model` lets that root model hold the configuration
+for every model its dumps reach, so one file describes the whole graph:
+
+```ruby
+class Order < ActiveRecord::Base
+  belongs_to :customer
+  has_many :line_items
+
+  replicate do
+    associations :line_items
+
+    model "LineItem" do
+      associations :adjustments
+    end
+
+    model "Customer" do
+      natural_key :email
+      omit_fields :password_digest
+    end
+  end
+end
+```
+
+`model` takes a class name and a block offering the same methods. The block
+configures that class exactly as its own `replicate` block would: the
+configuration is global to the class, not scoped to dumps rooted at the
+declaring model, and it combines additively with anything the class declares
+itself. This keeps one configuration per model, which the loader needs: natural
+keys apply when a record of that type is loaded, whatever dump produced it.
+
+Classes are named as strings so the declaring model never forces the others to
+load first. A block declared for a class that has not loaded yet applies when
+that class first asks for its configuration.
+
+Model configuration is a plan, validated as a whole before a stream starts.
+The `deckard` executable eager loads the application after requiring it, so
+every `replicate` block has run, then checks the entire configuration: each
+class named by `model` must be a loaded ActiveRecord model, each configured
+association must exist and be of a supported kind, and each natural-key or
+omitted attribute must exist. Validation reports every problem at once as a
+`ConfigurationError` before any record is dumped or loaded. Dumping through
+the Ruby API validates each model's configuration when its first record is
+dumped.
 
 ## 8. Traversal behavior
 
@@ -1013,6 +1064,7 @@ Deckard should use a small error hierarchy:
 
 ```ruby
 Deckard::Error
+Deckard::ConfigurationError
 Deckard::DumpError
 Deckard::OutputError
 Deckard::LoadError
@@ -1032,6 +1084,12 @@ Author(812).bookmarked_posts is a has_and_belongs_to_many association, which dec
 ```text
 Deckard::UnresolvedReference:
 Order(500).user_id references User(1234), which has not been loaded
+```
+
+```text
+Deckard::ConfigurationError:
+Order names :line_item in its replicate configuration, but no such association exists
+"Customr" is named in a replicate block, but is not a loaded ActiveRecord model
 ```
 
 ```text
@@ -1106,7 +1164,8 @@ Responsibilities:
 
 - Parse `-r`, `-d`, and `-l`.
 - Reserve standard output for the stream before requiring the application.
-- Require the application environment.
+- Require the application environment, then eager load it.
+- Validate the whole model configuration before streaming.
 - Evaluate dump expressions and scripts.
 - Connect standard input and output to the dumper or loader.
 - Return useful process statuses.
@@ -1137,7 +1196,9 @@ Responsibilities:
 - Store the optional natural key.
 - Store field omissions and association omissions separately.
 - Implement inheritance without shared mutable arrays.
-- Back the `replicate do ... end` model DSL.
+- Back the `replicate do ... end` model DSL, including `model` blocks
+  declared from a root model for classes that may load later.
+- Validate the whole configuration on demand, reporting every problem.
 
 ### `Deckard::ActiveRecord`
 
@@ -1223,6 +1284,24 @@ end
 ```
 
 causes the configured collection to be included.
+
+### 18.5a Root-model configuration
+
+```ruby
+class Order < ActiveRecord::Base
+  replicate do
+    associations :line_items
+    model "LineItem" do
+      associations :adjustments
+    end
+  end
+end
+```
+
+configures `LineItem` as its own `replicate` block would, whether `LineItem`
+loads before or after `Order`, and a configuration naming a missing class,
+association, or attribute fails with `ConfigurationError` before any record
+is dumped or loaded through the executable.
 
 ### 18.6 Per-dump association configuration
 
@@ -1443,7 +1522,7 @@ Deckard v1.0 will:
 - Use `deckard` as the gem and executable name.
 - Use `Deckard` as the Ruby namespace.
 - Use `replicate do ... end` for namespaced model configuration.
-- Expose only `associations`, `natural_key`, `omit_fields`, and `omit_associations` inside that block.
+- Expose only `associations`, `natural_key`, `omit_fields`, `omit_associations`, and `model` inside that block.
 - Retain dump expressions and ordinary Ruby dump scripts.
 - Retain `dump_replicant` and `load_replicant`.
 - Stream directly over standard input and output.

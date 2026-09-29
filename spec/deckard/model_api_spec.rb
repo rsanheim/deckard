@@ -68,10 +68,38 @@ RSpec.describe "replicate model DSL", :db do
     expect(Category.sole).to eq(category)
   end
 
-  it "raises DumpError when a replicate block names a missing association" do
+  it "raises ConfigurationError when a replicate block names a missing association" do
     broken = MisconfiguredCategory.create!(name: "broken", slug: "broken")
 
-    expect { stream(broken) }.to raise_error(Deckard::DumpError, /moderators/)
+    expect { stream(broken) }.to raise_error(Deckard::ConfigurationError, /MisconfiguredCategory names :moderators/)
+  end
+
+  it "applies configuration a root model declares for a class defined after it" do
+    expect(Deckard::ModelConfig.for(Comment).extra_associations).to eq([:replies])
+
+    author = create_author("rachael")
+    post = Post.create!(author: author, title: "Nexus-6 field notes")
+    question = Comment.create!(post: post, author: author, body: "Have you ever retired a human by mistake?")
+    Comment.create!(post: post, author: author, parent: question, body: "I'm not in the business.")
+
+    _, dumper = stream(post)
+    expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Comment" => 2)
+  end
+
+  it "applies configuration a root model declares for an already configured class" do
+    config = Deckard::ModelConfig.for(Category)
+
+    expect(config.natural_key_attributes).to eq([:slug])
+    expect(config.omitted_fields).to eq([:moderator_notes])
+  end
+
+  it "validates the whole configuration, reporting every problem at once" do
+    expect { Deckard::ModelConfig.validate! }.to raise_error(Deckard::ConfigurationError) do |error|
+      expect(error.message.lines.map(&:chomp)).to contain_exactly(
+        '"Moderator" is named in a replicate block, but is not a loaded ActiveRecord model',
+        "MisconfiguredCategory names :moderators in its replicate configuration, but no such association exists"
+      )
+    end
   end
 
   it "applies per-dump associations to the dumped object only" do
