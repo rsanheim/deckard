@@ -303,7 +303,23 @@ reported by `Rails.env` or, without Rails, `RAILS_ENV` or `RACK_ENV`. The
 refusal is a `LoadError` raised before any frame is read. `--force`
 overrides it for the rare deliberate case.
 
-### 6.5 Application output during a dump
+### 6.5 Printing a plan
+
+`--plan MODEL` prints the plan for dumps rooted at that model and exits:
+
+```bash
+deckard -r ./config/environment --plan Order
+deckard -r ./config/environment --plan Order --format json
+```
+
+The plan is built as data (`ModelConfig#to_h`: the root entry first, then
+each `model` entry, each with its associations, natural key, omitted fields
+and omitted associations) and rendered separately, as text for people or
+JSON for tools. The application is eager loaded first, and only the requested
+plan is validated; a model without a `replicate` block, or a plan with a
+problem, exits nonzero with the reason.
+
+### 6.6 Application output during a dump
 
 Deckard writes its binary stream to standard output and its own diagnostics
 to standard error. Requiring an application runs arbitrary boot code, and
@@ -317,7 +333,7 @@ stdout lands on stderr, and only the stream reaches the pipe or file. The
 operator does nothing to opt in; `> user.dump` and `| deckard -l` work as
 written regardless of what the application prints.
 
-### 6.6 Direct SSH streaming
+### 6.7 Direct SSH streaming
 
 The primary remote workflow remains a normal Unix pipeline:
 
@@ -330,13 +346,14 @@ ssh example.org "$remote_command" \
 
 SSH is only the transport. Deckard does not manage SSH connections or know anything about the remote host.
 
-### 6.7 CLI scope
+### 6.8 CLI scope
 
 The required v1.0 CLI is deliberately small:
 
 ```text
 deckard -r FILE -d EXPRESSION_OR_FILE_OR_- [ARGS...]
 deckard -r FILE -l [--force]
+deckard -r FILE --plan MODEL [--format text|json]
 deckard --version
 deckard --help
 ```
@@ -1113,6 +1130,7 @@ Deckard::CLI
 Deckard::Dumper
 Deckard::Loader
 Deckard::ModelConfig
+Deckard::PlanReport
 Deckard::ActiveRecord
 Deckard::Status
 ```
@@ -1125,6 +1143,7 @@ Responsibilities:
 - Reserve standard output for the stream before requiring the application.
 - Require the application environment.
 - Before a dump, eager load the application and validate every plan.
+- Print a root's plan on request, as text or JSON.
 - Evaluate dump expressions and scripts.
 - Connect standard input and output to the dumper or loader.
 - Return useful process statuses.
@@ -1158,6 +1177,7 @@ Responsibilities:
 - Resolve the plan for a root, and the entry for a reached class, through
   their ancestors, checking each entry against its class once.
 - Validate every plan on demand, reporting every problem.
+- Describe a plan as plain data for `Deckard::PlanReport` to render.
 
 ### `Deckard::ActiveRecord`
 
@@ -1172,6 +1192,11 @@ Responsibilities:
 - Traverse supported reflections.
 - Encode foreign-key references.
 - Insert or update rows without callbacks.
+
+### `Deckard::PlanReport`
+
+- Render a plan's data as text or JSON, and nothing else: a new output
+  format is a new renderer, never a change to the plan.
 
 ### `Deckard::Status`
 

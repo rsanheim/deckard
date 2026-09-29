@@ -6,7 +6,8 @@ require_relative "status"
 module Deckard
   # The deckard executable: -r requires the application environment, -d
   # dumps a Ruby expression or dump script to stdout, -l loads a stream
-  # from stdin. Required from exe/deckard, not from the library itself.
+  # from stdin, --plan prints a root model's plan. Required from
+  # exe/deckard, not from the library itself.
   class CLI
     def self.run(argv, stdin: $stdin, stdout: $stdout, stderr: $stderr)
       new(stdin: stdin, stdout: stdout, stderr: stderr).run(argv)
@@ -35,7 +36,13 @@ module Deckard
       reserve_stdout if options[:dump]
       require File.expand_path(options[:require]) if options[:require]
 
-      options[:dump] ? dump(options[:dump]) : load_stream(options)
+      if options[:dump]
+        dump(options[:dump])
+      elsif options[:plan]
+        print_plan(options[:plan], options[:format])
+      else
+        load_stream(options)
+      end
       0
     rescue Error => e
       @stderr.puts "#{e.class}: #{e.message}"
@@ -70,18 +77,22 @@ module Deckard
             dump:  deckard -r ./config/environment -d "User.find(1)" > user.dump
             load:  deckard -r ./config/environment -l < user.dump
             pipe:  ssh example.org "deckard -r /app/config/environment -d 'User.find(1)'" | deckard -r ./config/environment -l
+            plan:  deckard -r ./config/environment --plan User
 
           Options:
         BANNER
         opt :require, "Ruby file to require first (usually config/environment)", type: :string
         opt :dump, "Dump the result of a Ruby expression, or run a dump script (a file, or - for stdin)", type: :string
         opt :load, "Load a deckard stream from standard input"
+        opt :plan, "Print the plan for dumps rooted at MODEL", type: :string
+        opt :format, "Plan output: #{PlanReport::FORMATS.join(" or ")}", default: "text"
         opt :force, "Allow loading into a production environment"
       end
 
-      unless !options[:dump].nil? ^ options[:load]
-        Optimist.die "exactly one of -d or -l is required"
+      unless [options[:dump], options[:plan], options[:load] || nil].compact.size == 1
+        Optimist.die "exactly one of -d, -l or --plan is required"
       end
+      Optimist.die :format, "must be one of #{PlanReport::FORMATS.join(", ")}" unless PlanReport::FORMATS.include?(options[:format])
       options
     end
 
@@ -105,6 +116,20 @@ module Deckard
       dumper.complete
       @stdout.flush
       Status.report("dumped", dumper.counts, @stderr)
+    end
+
+    def print_plan(model_name, format)
+      Zeitwerk::Loader.eager_load_all if defined?(Zeitwerk::Loader)
+      klass = model_name.safe_constantize
+      raise ConfigurationError, "#{model_name.inspect} is not a loaded ActiveRecord model" unless klass.respond_to?(:replicate)
+
+      plan = ModelConfig.plan_for(klass)
+      raise ConfigurationError, "#{klass} has no replicate block" if plan.equal?(ModelConfig::NONE)
+
+      problems = plan.problems
+      raise ConfigurationError, problems.join("\n") unless problems.empty?
+
+      @stdout.write PlanReport.render(plan.to_h, format)
     end
 
     def load_stream(options)

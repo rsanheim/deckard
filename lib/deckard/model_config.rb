@@ -109,6 +109,20 @@ module Deckard
       end
     end
 
+    # The plan as data, root entry first: what PlanReport renders.
+    def to_h
+      entries = @entries.each_value.map do |entry|
+        {
+          "model" => entry.name,
+          "associations" => entry.extra_associations.map(&:to_s),
+          "natural_key" => entry.natural_key_attributes,
+          "omit_fields" => entry.omitted_fields,
+          "omit_associations" => entry.omitted_associations.map(&:to_s)
+        }
+      end
+      {"root" => @name, "entries" => entries}
+    end
+
     # The entry for a class nothing declared: defaults only.
     NONE = new.freeze
   end

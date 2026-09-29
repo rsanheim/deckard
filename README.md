@@ -120,6 +120,25 @@ must be a loaded ActiveRecord model, and each named association and attribute
 must exist on it. A bad plan fails there, reporting every problem at once,
 before any record is dumped. Loading consults no plan at all.
 
+To see a plan before pointing it at production, print it:
+
+```bash
+deckard -r ./config/environment --plan Order
+deckard -r ./config/environment --plan Order --format json
+```
+
+```text
+Order
+  associations      line_items
+
+LineItem
+  associations      adjustments
+
+Customer
+  natural key       email
+  omit fields       password_digest
+```
+
 ## Dumping
 
 `-d` evaluates a Ruby expression and streams the result to standard output.

@@ -22,6 +22,27 @@ RSpec.describe Deckard::ModelConfig do
     expect(plan.natural_key_attributes).to eq(%w[user_id email])
   end
 
+  it "describes itself as data, root entry first" do
+    plan = Deckard::ModelConfig.new("Order")
+    plan.associations :line_items
+    plan.natural_key :number
+    plan.model("Customer") do
+      natural_key :email
+      omit_fields :password_digest
+      omit_associations :sessions
+    end
+
+    expect(plan.to_h).to eq(
+      "root" => "Order",
+      "entries" => [
+        {"model" => "Order", "associations" => ["line_items"], "natural_key" => ["number"],
+         "omit_fields" => [], "omit_associations" => []},
+        {"model" => "Customer", "associations" => [], "natural_key" => ["email"],
+         "omit_fields" => ["password_digest"], "omit_associations" => ["sessions"]}
+      ]
+    )
+  end
+
   it "keeps every model entry in one table, however deeply it is declared" do
     plan = Deckard::ModelConfig.new("Order")
     plan.model("LineItem") { model("Adjustment") { natural_key :code } }

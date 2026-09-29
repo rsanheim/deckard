@@ -45,6 +45,52 @@ RSpec.describe "deckard CLI" do
     expect(out).to be_empty
   end
 
+  it "prints a root model's plan as text or json" do
+    out, err, status = run_deckard("-r", fixture, "--plan", "WidgetOrder")
+
+    expect(status.exitstatus).to eq(0)
+    expect(err).to include("LazyWidget loaded")
+    expect(out).to eq(<<~TEXT)
+      WidgetOrder
+        omit associations warehouse
+
+      WidgetLine
+        associations      adjustments
+        omit associations tax
+    TEXT
+
+    out, _, status = run_deckard("-r", fixture, "--plan", "WidgetOrder", "--format", "json")
+    expect(status.exitstatus).to eq(0)
+    expect(JSON.parse(out)).to eq(
+      "root" => "WidgetOrder",
+      "entries" => [
+        {"model" => "WidgetOrder", "associations" => [], "natural_key" => [], "omit_fields" => [],
+         "omit_associations" => ["warehouse"]},
+        {"model" => "WidgetLine", "associations" => ["adjustments"], "natural_key" => [], "omit_fields" => [],
+         "omit_associations" => ["tax"]}
+      ]
+    )
+  end
+
+  it "refuses to print a missing, invalid, or unloaded plan" do
+    out, err, status = run_deckard("-r", fixture, "--plan", "WidgetLine")
+    expect(status.exitstatus).to eq(1)
+    expect(out).to be_empty
+    expect(err).to include("WidgetLine has no replicate block")
+
+    _, err, status = run_deckard("-r", fixture, "--plan", "LazyOrder", env: {"DECKARD_BROKEN_PLAN" => "1"})
+    expect(status.exitstatus).to eq(1)
+    expect(err).to include('"Refund" is named in a replicate block')
+
+    _, err, status = run_deckard("-r", fixture, "--plan", "Nope")
+    expect(status.exitstatus).to eq(1)
+    expect(err).to include('"Nope" is not a loaded ActiveRecord model')
+
+    _, err, status = run_deckard("-r", fixture, "--plan", "WidgetOrder", "--format", "yaml")
+    expect(status.exitstatus).not_to eq(0)
+    expect(err).to include("must be one of text, json")
+  end
+
   it "loads without consulting the destination's plans" do
     dumped, _, _ = run_deckard("-r", fixture, "-d", "WIDGETS")
 
@@ -168,14 +214,14 @@ RSpec.describe "deckard CLI" do
     end
   end
 
-  it "requires exactly one of -d or -l" do
+  it "requires exactly one of -d, -l or --plan" do
     _, neither_err, neither = run_deckard("-r", fixture)
     _, both_err, both = run_deckard("-r", fixture, "-d", "WIDGETS", "-l")
 
     expect(neither.exitstatus).not_to eq(0)
-    expect(neither_err).to include("exactly one of -d or -l")
+    expect(neither_err).to include("exactly one of -d, -l or --plan")
     expect(both.exitstatus).not_to eq(0)
-    expect(both_err).to include("exactly one of -d or -l")
+    expect(both_err).to include("exactly one of -d, -l or --plan")
   end
 
   it "prints its version" do
