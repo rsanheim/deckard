@@ -42,20 +42,12 @@ class Author < ActiveRecord::Base
   replicate do
     natural_key :username
     associations :reactions, :posts, :author_emails, :donations, :attachments
-    model "Profile" do
-      natural_key :author_id
-    end
-    model "AuthorEmail" do
-      natural_key :author_id, :address
-    end
+    natural_keys "Profile" => :author_id, "AuthorEmail" => [:author_id, :address], "Category" => :slug
     model "Post" do
       associations :comments
     end
     model "Comment" do
       associations :replies
-    end
-    model "Category" do
-      natural_key :slug
     end
     model "Attachment" do
       associations :variants
@@ -72,9 +64,7 @@ class AuthorEmail < ActiveRecord::Base
 
   replicate do
     natural_key :author_id, :address
-    model "Author" do
-      natural_key :username
-    end
+    natural_keys "Author" => :username
   end
 end
 
@@ -90,19 +80,16 @@ end
 class AnnouncementCategory < Category
 end
 
-# Deliberately broken: names an association and an attribute the model
-# lacks, a model that does not exist, and an unsupported association on a
-# reached class. Whole-plan validation must report all of it.
+# Deliberately broken in five ways; whole-plan validation must report all.
 class MisconfiguredCategory < ActiveRecord::Base
   self.table_name = "categories"
 
   replicate do
     associations :moderators
     natural_key :handle
-    model "Moderator" do
-      natural_key :login
-    end
+    natural_keys "Moderator" => :login, "Post" => :title
     model "Post" do
+      natural_key :title
       associations :tags
     end
   end
@@ -157,15 +144,12 @@ class Post < ActiveRecord::Base
   # carries moderator_notes while a category dump omits them.
   replicate do
     associations :comments
+    natural_keys "Author" => :username, "Category" => :slug
     model "Comment" do
       associations :replies, :mentions
     end
     model "Author" do
-      natural_key :username
       omit_fields :private_notes, :api_token
-    end
-    model "Category" do
-      natural_key :slug
     end
   end
 end
@@ -179,9 +163,7 @@ class Comment < ActiveRecord::Base
   has_many :mentions
 
   replicate do
-    model "Author" do
-      natural_key :username
-    end
+    natural_keys "Author" => :username
   end
 end
 
@@ -200,9 +182,7 @@ class PostTag < ActiveRecord::Base
   # The tag is left behind: its foreign key travels as-is.
   replicate do
     omit_associations :tag
-    model "Author" do
-      natural_key :username
-    end
+    natural_keys "Author" => :username
   end
 end
 
@@ -213,9 +193,7 @@ class Reaction < ActiveRecord::Base
   # The target is left behind: its polymorphic foreign key travels as-is.
   replicate do
     omit_associations :reactable
-    model "Author" do
-      natural_key :username
-    end
+    natural_keys "Author" => :username
   end
 end
 
@@ -226,9 +204,7 @@ class Mention < ActiveRecord::Base
   belongs_to :author, primary_key: :username, foreign_key: :mentioned_username
 
   replicate do
-    model "Author" do
-      natural_key :username
-    end
+    natural_keys "Author" => :username
   end
 end
 
@@ -239,9 +215,7 @@ class Attachment < ActiveRecord::Base
 
   replicate do
     associations :variants
-    model "Author" do
-      natural_key :username
-    end
+    natural_keys "Author" => :username
   end
 end
 
@@ -249,9 +223,7 @@ class AttachmentVariant < ActiveRecord::Base
   belongs_to :attachment
 
   replicate do
-    model "Author" do
-      natural_key :username
-    end
+    natural_keys "Author" => :username
   end
 end
 
@@ -262,9 +234,7 @@ class Donation < ActiveRecord::Base
   # The post travels, but the donation's link to it does not.
   replicate do
     omit_fields :post_id
-    model "Author" do
-      natural_key :username
-    end
+    natural_keys "Author" => :username
   end
 end
 

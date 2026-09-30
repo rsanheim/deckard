@@ -92,7 +92,7 @@ gives every order the full plan, and a record two dumps share lands once.
 
 ## Plans
 
-The `replicate` block offers five methods:
+The `replicate` block offers six methods:
 
 ```ruby
 replicate do
@@ -101,17 +101,25 @@ replicate do
   omit_fields :internal_notes    # keep a field out of the stream
   omit_associations :warehouse   # do not traverse this association
 
-  model "LineItem" do            # the same four, for a class the dump reaches
+  natural_keys "Product" => :sku,             # how each reached class is matched
+    "Warehouse" => [:region, :code]
+
+  model "LineItem" do            # the first four, for a class the dump reaches
     associations :adjustments
   end
 end
 ```
 
+Most reached classes need nothing but a natural key, and `natural_keys` says
+that for all of them in one table. A `model` block is for the rest: a
+collection to bring along, a field to leave out. A plan gives each class one
+key, so naming it in both places is a plan problem, not an override.
+
 Classes are named as strings, so the root never forces them to load first,
 and an STI subclass follows the entry for its nearest declared ancestor. Each
 record travels with the natural key its plan gave it, so the destination
 needs no plan of its own. That also means a natural key is repeated in every
-plan whose dumps reach the class: a Customer entry in Order's plan and one in
+plan whose dumps reach the class: a Customer line in Order's plan and one in
 Invoice's, each saying how a customer is matched.
 
 Before dumping, the `deckard` executable eager loads the application so

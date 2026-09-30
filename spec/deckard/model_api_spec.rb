@@ -101,6 +101,7 @@ RSpec.describe "replicate model DSL", :db do
         'MisconfiguredCategory has no "handle" attribute',
         '"Moderator" is named in a replicate block, but is not a loaded ActiveRecord model',
         "Post.tags is a has_many :through association, which deckard does not support; replicate :post_tags instead",
+        "Post is given a natural key more than once in the same plan",
         "Bookmarker.bookmarked_posts is a has_and_belongs_to_many association, " \
           "which deckard does not support; use an explicit join model and replicate that association instead",
         "Commenter.commented_posts is a has_many :through association, " \
