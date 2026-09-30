@@ -188,7 +188,8 @@ plaintext and are re-encrypted with the destination's keys on load.
 ## Development
 
 `bundle exec rake` runs the unit/integration suite (specs against a local
-PostgreSQL 18, lint, and a style ratchet). The specs run against a small forum
+PostgreSQL 18, lint, and a style ratchet); `bin/rspec spec/deckard/stream_spec.rb`
+runs one file. The specs run against a small forum
 schema managed with ActiveRecord's own migration and schema tooling under
 `spec/db`; `bundle exec rake -T db` lists the database tasks, and
 `bundle exec rake db:reset` rebuilds and seeds the test databases from scratch.

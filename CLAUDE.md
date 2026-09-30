@@ -20,8 +20,8 @@ bin/setup                 # install dependencies
 bundle exec rake          # default task: specs + standard (lint) + ratchet
 bundle exec rake spec     # tests only
 bundle exec rake e2e      # end-to-end stream test inside docker compose
-bundle exec rspec spec/deckard_spec.rb          # one spec file
-bundle exec rspec spec/deckard_spec.rb:12       # one example by line
+bin/rspec spec/deckard_spec.rb                  # one spec file
+bin/rspec spec/deckard_spec.rb:12               # one example by line
 bundle exec standardrb    # lint (standardrb --fix to autocorrect)
 bin/console               # IRB with the gem loaded
 bundle exec rake db:migrate   # migrate the test databases and regenerate spec/db/schema.rb
