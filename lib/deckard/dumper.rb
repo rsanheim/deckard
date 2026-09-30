@@ -12,60 +12,58 @@ module Deckard
       @output = output
       @after_write = after_write
       @dumped = Set.new
-      @in_progress = Hash.new(0)
+      @walked = Set.new
+      @in_progress = Set.new
       @counts = Hash.new(0)
       write_frame(STREAM_HEADER)
     end
 
     # Dump one object, or each element of an enumerable. The object must
-    # implement dump_replicant(dumper, options) and write itself (and any
+    # implement dump_replicant(dumper) and write itself (and any
     # dependencies, first) via #write.
-    def dump(object, options = {})
+    def dump(object)
       return if object.nil?
 
       if object.respond_to?(:dump_replicant)
-        object.dump_replicant(self, options)
+        object.dump_replicant(self)
       elsif object.respond_to?(:find_each)
-        object.find_each { |item| dump(item, options) }
+        object.find_each { |item| dump(item) }
       elsif object.respond_to?(:each)
-        object.each { |item| dump(item, options) }
+        object.each { |item| dump(item) }
       else
         raise DumpError, "#{object.class} does not implement dump_replicant"
       end
     end
 
-    # Runs the block for a [type, id] that is not yet written. A record
-    # reached again while its dump is in progress higher up the stack (e.g.
-    # record -> parent -> parent's collection -> child -> record) is entered
-    # a second time so it can be written as soon as its own parents are; the
-    # outer call's later write is then a no-op. A third entry can only happen
-    # while the second is still walking the record's belongs_to parents,
-    # which means those parents lead back to the record: a true cycle. That
-    # entry is skipped, and callers that require the identity to be emitted
-    # first check #dumped? after and raise.
-    def once(type, id)
-      key = [type.to_s, id]
-      return if @dumped.include?(key) || @in_progress[key] >= 2
+    # Runs the block for a [type, id] not yet written, or written but not
+    # yet walked when walk is true. A record visited again while its own
+    # visit is in progress is a dependency cycle: the block is skipped, and
+    # callers that need the identity written first check #dumped? and raise.
+    def visit(type, id, walk:)
+      key = [type, id]
+      return if @in_progress.include?(key) || (walk ? @walked : @dumped).include?(key)
 
-      @in_progress[key] += 1
+      @walked.add(key) if walk
+      @in_progress.add(key)
       begin
         yield
       ensure
-        @in_progress[key] -= 1
+        @in_progress.delete(key)
       end
     end
 
     def dumped?(type, id)
-      @dumped.include?([type.to_s, id])
+      @dumped.include?([type, id])
     end
 
     # Called by dump_replicant implementations to emit one replicant tuple.
-    def write(type, id, attributes, _object)
+    # natural_key names the attributes by which the destination matches an
+    # existing record to reuse; empty means always insert.
+    def write(type, id, attributes, natural_key = [])
       type = type.to_s
-      return if @dumped.include?([type, id])
+      return unless @dumped.add?([type, id])
 
-      @dumped.add([type, id])
-      write_frame([type, id, attributes])
+      write_frame([type, id, attributes, natural_key])
       @counts[type] += 1
       @after_write&.call(@counts)
     end

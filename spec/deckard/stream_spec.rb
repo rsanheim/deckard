@@ -16,18 +16,18 @@ class FakeAuthor
   end
 
   attr_reader :id
-  attr_accessor :name
+  attr_reader :name
 
   def initialize(id:, name:)
     @id = id
     @name = name
   end
 
-  def dump_replicant(dumper, options = {})
-    dumper.write(self.class, id, {"name" => name}, self)
+  def dump_replicant(dumper)
+    dumper.write(self.class, id, {"name" => name})
   end
 
-  def self.load_replicant(type, source_id, attributes)
+  def self.load_replicant(type, source_id, attributes, natural_key)
     author = new(id: next_id, name: attributes["name"])
     self.next_id += 1
     store[author.id] = author
@@ -46,7 +46,7 @@ class FakePost
   end
 
   attr_reader :id
-  attr_accessor :title, :author, :author_id
+  attr_reader :title, :author, :author_id
 
   def initialize(id:, title:, author: nil, author_id: nil)
     @id = id
@@ -55,16 +55,16 @@ class FakePost
     @author_id = author_id
   end
 
-  def dump_replicant(dumper, options = {})
-    dumper.dump(author, options)
+  def dump_replicant(dumper)
+    dumper.dump(author)
     attributes = {
       "title" => title,
       "author_id" => [:id, FakeAuthor.name, author.id]
     }
-    dumper.write(self.class, id, attributes, self)
+    dumper.write(self.class, id, attributes)
   end
 
-  def self.load_replicant(type, source_id, attributes)
+  def self.load_replicant(type, source_id, attributes, natural_key)
     post = new(id: next_id, title: attributes["title"], author_id: attributes["author_id"])
     self.next_id += 1
     store[post.id] = post
@@ -176,7 +176,7 @@ RSpec.describe "Deckard stream" do
   it "raises UnresolvedReference with context when a reference precedes its object" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
-    Marshal.dump(["FakePost", 50, {"title" => "Orphan", "author_id" => [:id, "FakeAuthor", 1]}], io)
+    Marshal.dump(["FakePost", 50, {"title" => "Orphan", "author_id" => [:id, "FakeAuthor", 1]}, []], io)
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 
@@ -189,7 +189,7 @@ RSpec.describe "Deckard stream" do
   it "raises LoadError when the streamed type is not a defined class" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
-    Marshal.dump(["NoSuchClass", 1, {}], io)
+    Marshal.dump(["NoSuchClass", 1, {}, []], io)
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 
@@ -200,7 +200,7 @@ RSpec.describe "Deckard stream" do
   it "raises LoadError when the streamed class does not implement load_replicant" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
-    Marshal.dump(["String", 1, {}], io)
+    Marshal.dump(["String", 1, {}, []], io)
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 
@@ -208,10 +208,31 @@ RSpec.describe "Deckard stream" do
       .to raise_error(Deckard::LoadError, /String does not implement load_replicant/)
   end
 
+  it "rejects a frame without a natural key, including the old three-element tuple" do
+    [["FakeAuthor", 1, {"name" => "Rob"}], ["FakeAuthor", 1, {"name" => "Rob"}, nil]].each do |frame|
+      io = StringIO.new
+      Marshal.dump(Deckard::STREAM_HEADER, io)
+      Marshal.dump(frame, io)
+      Marshal.dump(Deckard::STREAM_END, io)
+      io.rewind
+
+      expect { Deckard::Loader.new(io).load }.to raise_error(Deckard::InvalidStream, /malformed stream frame/)
+    end
+  end
+
+  it "rejects a stream from an earlier protocol version" do
+    io = StringIO.new
+    Marshal.dump([:deckard, 1], io)
+    Marshal.dump(Deckard::STREAM_END, io)
+    io.rewind
+
+    expect { Deckard::Loader.new(io).load }.to raise_error(Deckard::InvalidStream, /invalid stream header/)
+  end
+
   it "raises InvalidStream on a malformed frame without printing attribute values" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
-    Marshal.dump(["FakeAuthor", 1, "sensitive-not-a-hash"], io)
+    Marshal.dump(["FakeAuthor", 1, "sensitive-not-a-hash", []], io)
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 

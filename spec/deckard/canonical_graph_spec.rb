@@ -11,15 +11,6 @@ RSpec.describe "canonical forum graph", db: :multiple do
     DeckardTestDatabase::Tasks.load_seed
   end
 
-  def dump(object, options = {})
-    io = StringIO.new
-    dumper = Deckard::Dumper.new(io)
-    dumper.dump(object, options)
-    dumper.complete
-    io.rewind
-    [io, dumper]
-  end
-
   def replicated_attributes(record)
     foreign_keys = record.class.reflect_on_all_associations(:belongs_to).map(&:foreign_key)
     record.attributes.except(record.class.primary_key, *foreign_keys)
@@ -69,9 +60,9 @@ RSpec.describe "canonical forum graph", db: :multiple do
     source_post = Post.find_by!(title: "Nexus-6 field notes")
     source_snapshot = post_snapshot(source_post)
     source_ids = {"Author" => Author.ids, "Post" => Post.ids, "Comment" => Comment.ids}
-    stream, dumper = dump(source_post)
+    stream, dumper = stream(source_post)
 
-    expect(dumper.counts).to include("Author" => 3, "Category" => 1, "Post" => 1, "Comment" => 4)
+    expect(dumper.counts).to eq("Author" => 3, "Category" => 1, "Post" => 1, "Comment" => 4, "Mention" => 2)
 
     DeckardTestDatabase.with_destination do
       advance_destination_sequences
@@ -91,20 +82,28 @@ RSpec.describe "canonical forum graph", db: :multiple do
         expect(ids & source_ids.fetch(type)).to be_empty
       end
 
-      # Loading the same stream again reuses every naturally keyed row.
+      # Loading the same stream again reuses every naturally keyed row and
+      # inserts everything else afresh.
       stream.rewind
+      keyed_rows = [Author.count, Category.count]
       expect { Deckard::Loader.new(stream).load }
-        .not_to change { [Author.count, Category.count] }
+        .to change(Post, :count).by(1).and change(Comment, :count).by(4)
+      expect([Author.count, Category.count]).to eq(keyed_rows)
     end
   end
 
   it "clones an author's forum activity into another database" do
     source_author = Author.find_by!(username: "rachael")
     source_snapshot = author_snapshot(source_author)
-    stream, dumper = dump(source_author, associations: %i[posts author_emails reactions donations attachments])
+    stream, dumper = stream(source_author)
 
-    # Her own posts plus the one she reacted to; every comment under them.
-    expect(dumper.counts).to include("Author" => 3, "Post" => 3, "Comment" => 5, "AttachmentVariant" => 2)
+    # Her own posts with their comments, the post she reacted to as a row,
+    # and the authors those rows point at as rows: nothing they own.
+    expect(dumper.counts).to eq(
+      "Author" => 3, "Profile" => 1, "AuthorEmail" => 2, "Post" => 3, "Comment" => 4, "Category" => 1,
+      "Reaction" => 2, "Donation" => 1, "Attachment" => 1, "AttachmentVariant" => 2
+    )
+    expect(Post.find_by!(title: "Unicorn origami").author.username).to eq("deckard")
 
     DeckardTestDatabase.with_destination do
       loader = Deckard::Loader.new(stream)

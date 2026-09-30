@@ -62,17 +62,17 @@ plain-Ruby fixture objects (`spec/deckard/stream_spec.rb:122-133`).
 
 ### has_and_belongs_to_many — Covered; fails clearly
 
-The social-app fixture models `Author#bookmarked_posts` as HABTM through the anonymous
-`bookmarks` table. Selecting it raises `UnsupportedAssociation` before any records are
-emitted and recommends replacing HABTM with an explicit join model
-(`spec/deckard/unsupported_associations_spec.rb:8-20`).
+The fixture models `Bookmarker#bookmarked_posts` as HABTM through the anonymous
+`bookmarks` table. A plan naming it fails with `ConfigurationError` before any records
+are emitted and recommends replacing HABTM with an explicit join model
+(`spec/deckard/unsupported_associations_spec.rb`).
 
 ### has_many :through — Covered; fails clearly with guidance
 
-The fixture models `Author#commented_posts` through `Author#comments`. Selecting the
-far-side association raises `UnsupportedAssociation` before any records are emitted and
-specifically recommends replicating `:comments` instead
-(`unsupported_associations_spec.rb:22-35`). Dumping the join association remains the
+The fixture models `Commenter#commented_posts` through `Commenter#comments`. A plan
+naming the far-side association fails with `ConfigurationError` before any records are
+emitted and specifically recommends replicating `:comments` instead
+(`unsupported_associations_spec.rb`). Naming the join association remains the
 supported pattern: each comment's belongs_to associations pull in its author and post.
 
 ### has_one :through — No coverage; happened to work in the common shape
@@ -213,5 +213,5 @@ In-contract gaps — behavior verified correct, each needs a small regression te
 
 Verified warts needing a decision (behavior change, not just a test):
 
-- [x] HABTM and far-side `has_many :through` now raise `UnsupportedAssociation` before emitting records. The through-association error names the join association to replicate instead.
+- [x] HABTM and far-side `has_many :through` fail with `ConfigurationError` before emitting records. The through-association error names the join association to replicate instead.
 - [x] `omit_associations` now preserves both polymorphic foreign-key fields while skipping traversal; fields are omitted only through `omit_fields`

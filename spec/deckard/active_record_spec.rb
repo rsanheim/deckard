@@ -13,15 +13,6 @@ RSpec.describe Deckard::ActiveRecord, :db do
     Author.create!(username: username, name: name)
   end
 
-  def stream(objects, options = {})
-    io = StringIO.new
-    dumper = Deckard::Dumper.new(io)
-    Array(objects).each { |object| dumper.dump(object, options) }
-    dumper.complete
-    io.rewind
-    [io, dumper]
-  end
-
   it "copies a belongs_to foreign key that targets a non-primary-key column without remapping it" do
     rachael = create_author("rachael")
     deckard = create_author("deckard")
@@ -79,14 +70,23 @@ RSpec.describe Deckard::ActiveRecord, :db do
     expect(new_comment.author_id).to eq(new_author.id)
   end
 
-  it "dumps has_one dependents automatically but not has_many collections" do
+  it "dumps has_one dependents automatically" do
     author = create_author("rachael")
     Profile.create!(author: author, bio: "More human than human")
-    Post.create!(author: author, title: "not dumped")
 
     _, dumper = stream(author)
 
     expect(dumper.counts).to eq("Author" => 1, "Profile" => 1)
+  end
+
+  it "does not dump has_many collections the plan leaves out" do
+    author = create_author("rachael")
+    category = Category.create!(name: "General", slug: "general")
+    Post.create!(author: author, category: category, title: "not dumped")
+
+    _, dumper = stream(category)
+
+    expect(dumper.counts).to eq("Category" => 1)
   end
 
   it "dumps a shared dependency once and maps all foreign keys to one destination row" do
@@ -143,8 +143,8 @@ RSpec.describe Deckard::ActiveRecord, :db do
   it "rolls back prior inserts when a later insert fails, raising InsertError with context" do
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
-    Marshal.dump(["Author", 1, {"username" => "fine", "name" => "loads fine"}], io)
-    Marshal.dump(["Author", 2, {"username" => "broken", "name" => nil}], io)
+    Marshal.dump(["Author", 1, {"username" => "fine", "name" => "loads fine"}, []], io)
+    Marshal.dump(["Author", 2, {"username" => "broken", "name" => nil}, []], io)
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 
@@ -152,28 +152,12 @@ RSpec.describe Deckard::ActiveRecord, :db do
     expect(Author.count).to eq(0)
   end
 
-  it "round trips a populated polymorphic belongs_to" do
+  it "round trips a populated polymorphic belongs_to through a reverse polymorphic has_many" do
     author = create_author("rachael")
     post = Post.create!(author: author, title: "Nexus-6 field notes")
     reaction = Reaction.create!(author: author, reactable: post, kind: "like")
 
-    io, dumper = stream(reaction)
-    expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Reaction" => 1)
-
-    Deckard::Loader.new(io).load
-
-    new_post = Post.where.not(id: post.id).sole
-    new_reaction = Reaction.where.not(id: reaction.id).sole
-    expect(new_reaction.reactable_type).to eq("Post")
-    expect(new_reaction.reactable_id).to eq(new_post.id)
-  end
-
-  it "round trips an explicitly selected reverse polymorphic has_many" do
-    author = create_author("rachael")
-    post = Post.create!(author: author, title: "Nexus-6 field notes")
-    reaction = Reaction.create!(author: author, reactable: post, kind: "like")
-
-    io, dumper = stream(author, associations: [:reactions])
+    io, dumper = stream(author)
     expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Reaction" => 1)
 
     author.update_columns(username: "rachael-source")
@@ -190,7 +174,7 @@ RSpec.describe Deckard::ActiveRecord, :db do
     post = Post.create!(author: author, title: "Nexus-6 field notes")
     reaction = Reaction.create!(author: author, reactable: post, kind: "like")
 
-    io, dumper = stream(reaction, omit_associations: [:reactable])
+    io, dumper = stream(reaction)
     expect(dumper.counts).to eq("Author" => 1, "Reaction" => 1)
 
     Deckard::Loader.new(io).load

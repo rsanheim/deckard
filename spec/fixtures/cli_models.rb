@@ -4,6 +4,14 @@ require "json"
 
 puts "application booted" if ENV["DECKARD_BOOT_LOG"] == "1"
 
+# A Zeitwerk-managed directory nothing references: only eager loading brings
+# its constants in, which the CLI must do so every replicate block runs.
+require "zeitwerk"
+autoloader = Zeitwerk::Loader.new
+autoloader.push_dir(File.expand_path("cli_autoload", __dir__))
+autoloader.push_dir(File.expand_path("cli_autoload_broken", __dir__)) if ENV["DECKARD_BROKEN_PLAN"] == "1"
+autoloader.setup
+
 # Plain-Ruby replicant classes for the CLI subprocess specs. Loading appends
 # JSON lines to the file named by DECKARD_CLI_OUT, so the parent spec
 # process can observe what a separate load process did.
@@ -15,11 +23,11 @@ class CliWidget
     @name = name
   end
 
-  def dump_replicant(dumper, options = {})
-    dumper.write(self.class, id, {"name" => name}, self)
+  def dump_replicant(dumper)
+    dumper.write(self.class, id, {"name" => name})
   end
 
-  def self.load_replicant(type, source_id, attributes)
+  def self.load_replicant(type, source_id, attributes, natural_key)
     File.open(ENV.fetch("DECKARD_CLI_OUT"), "a") do |file|
       file.puts JSON.generate("type" => type, "source_id" => source_id, "attributes" => attributes)
     end

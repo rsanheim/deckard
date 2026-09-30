@@ -15,12 +15,12 @@ class PerfRecord
     @payload = payload
   end
 
-  def dump_replicant(dumper, options = {})
-    dumper.write(self.class, id, {"payload" => payload}, self)
+  def dump_replicant(dumper)
+    dumper.write(self.class, id, {"payload" => payload})
   end
 
   # Near-zero work: no store, no object allocation beyond the tuple.
-  def self.load_replicant(type, source_id, attributes)
+  def self.load_replicant(type, source_id, attributes, natural_key)
     [source_id + 1, nil]
   end
 end
@@ -32,15 +32,15 @@ class PerfConcurrencyRecord
     @id = id
   end
 
-  def dump_replicant(dumper, options = {})
-    dumper.write(self.class, id, {}, self)
+  def dump_replicant(dumper)
+    dumper.write(self.class, id, {})
   end
 
   class << self
-    attr_accessor :loaded_count, :dumper_done
+    attr_accessor :loaded_count
   end
 
-  def self.load_replicant(type, source_id, attributes)
+  def self.load_replicant(type, source_id, attributes, natural_key)
     self.loaded_count += 1
     [source_id + 1, nil]
   end
@@ -54,15 +54,15 @@ class PerfLargeAttributeRecord
     @payload = payload
   end
 
-  def dump_replicant(dumper, options = {})
-    dumper.write(self.class, id, {"payload" => payload}, self)
+  def dump_replicant(dumper)
+    dumper.write(self.class, id, {"payload" => payload})
   end
 
   class << self
     attr_accessor :loaded_payload
   end
 
-  def self.load_replicant(type, source_id, attributes)
+  def self.load_replicant(type, source_id, attributes, natural_key)
     self.loaded_payload = attributes["payload"]
     [source_id + 1, nil]
   end
@@ -71,7 +71,6 @@ end
 RSpec.describe "Deckard stream performance", perf: true do
   it "streams concurrently: the loader processes records while the dumper is still writing" do
     PerfConcurrencyRecord.loaded_count = 0
-    PerfConcurrencyRecord.dumper_done = false
     loaded_count_at_dumper_done = nil
     record_count = 5_000
 
@@ -82,7 +81,6 @@ RSpec.describe "Deckard stream performance", perf: true do
       record_count.times { |i| dumper.dump(PerfConcurrencyRecord.new(id: i)) }
       dumper.complete
       loaded_count_at_dumper_done = PerfConcurrencyRecord.loaded_count
-      PerfConcurrencyRecord.dumper_done = true
       writer.close
     end
 

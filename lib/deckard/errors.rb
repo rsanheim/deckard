@@ -8,13 +8,13 @@ module Deckard
 
   class Error < StandardError; end
 
+  class ConfigurationError < Error; end
+
   class DumpError < Error; end
 
   class OutputError < DumpError; end
 
   class LoadError < Error; end
-
-  class UnsupportedAssociation < DumpError; end
 
   class UnresolvedReference < LoadError; end
 

@@ -1,34 +1,31 @@
 # frozen_string_literal: true
 
 require "optimist"
+require_relative "plan_report"
 require_relative "status"
 
 module Deckard
   # The deckard executable: -r requires the application environment, -d
   # dumps a Ruby expression or dump script to stdout, -l loads a stream
-  # from stdin. Required from exe/deckard, not from the library itself.
+  # from stdin, --plan prints a root model's plan. Required from
+  # exe/deckard, not from the library itself.
   class CLI
-    def self.run(argv, stdin: $stdin, stdout: $stdout, stderr: $stderr)
-      new(stdin: stdin, stdout: stdout, stderr: stderr).run(argv)
-    end
-
     # Evaluation context for dump scripts and -d expressions: exposes only
-    # dump(object, options). Scripts see any extra command-line arguments
-    # in ARGV.
+    # dump(object). Scripts see any extra command-line arguments in ARGV.
     class DumpScript
       def initialize(dumper)
         @dumper = dumper
       end
 
-      def dump(object, options = {})
-        @dumper.dump(object, options)
+      def dump(object)
+        @dumper.dump(object)
       end
     end
 
-    def initialize(stdin:, stdout:, stderr:)
-      @stdin = stdin
-      @stdout = stdout
-      @stderr = stderr
+    def initialize
+      @stdin = $stdin
+      @stdout = $stdout
+      @stderr = $stderr
     end
 
     def run(argv)
@@ -36,7 +33,13 @@ module Deckard
       reserve_stdout if options[:dump]
       require File.expand_path(options[:require]) if options[:require]
 
-      options[:dump] ? dump(options[:dump]) : load_stream(options)
+      if options[:dump]
+        dump(options[:dump])
+      elsif options[:plan]
+        print_plan(options[:plan], options[:format])
+      else
+        load_stream(options)
+      end
       0
     rescue Error => e
       @stderr.puts "#{e.class}: #{e.message}"
@@ -54,8 +57,6 @@ module Deckard
     # its children write to stdout lands on stderr instead.
     # rubocop:disable Style/GlobalStdStream -- the process-level streams are the point
     def reserve_stdout
-      return unless @stdout.equal?(STDOUT)
-
       @stdout = STDOUT.dup
       STDOUT.reopen(STDERR)
       $stdout = STDOUT
@@ -71,23 +72,35 @@ module Deckard
             dump:  deckard -r ./config/environment -d "User.find(1)" > user.dump
             load:  deckard -r ./config/environment -l < user.dump
             pipe:  ssh example.org "deckard -r /app/config/environment -d 'User.find(1)'" | deckard -r ./config/environment -l
+            plan:  deckard -r ./config/environment --plan User
 
           Options:
         BANNER
         opt :require, "Ruby file to require first (usually config/environment)", type: :string
         opt :dump, "Dump the result of a Ruby expression, or run a dump script (a file, or - for stdin)", type: :string
         opt :load, "Load a deckard stream from standard input"
+        opt :plan, "Print the plan for dumps rooted at MODEL", type: :string
+        opt :format, "Plan output: #{PlanReport::FORMATS.join(" or ")}", default: "text"
         opt :force, "Allow loading into a production environment"
       end
 
-      unless !options[:dump].nil? ^ options[:load]
-        Optimist.die "exactly one of -d or -l is required"
+      unless [options[:dump], options[:plan], options[:load] || nil].compact.size == 1
+        Optimist.die "exactly one of -d, -l or --plan is required"
       end
+      Optimist.die :format, "must be one of #{PlanReport::FORMATS.join(", ")}" unless PlanReport::FORMATS.include?(options[:format])
       options
     end
 
+    # Every replicate block must have run before a plan is read, and Rails
+    # only eager loads on its own when config.eager_load is on.
+    def eager_load
+      Zeitwerk::Loader.eager_load_all if defined?(Zeitwerk::Loader)
+    end
+
     def dump(target)
-      @stdout.binmode if @stdout.respond_to?(:binmode)
+      eager_load
+      ModelConfig.validate!
+      @stdout.binmode
       dumper = Dumper.new(@stdout) { |counts| Status.progress("dumping", counts, @stderr) }
       script = DumpScript.new(dumper)
 
@@ -104,12 +117,26 @@ module Deckard
       Status.report("dumped", dumper.counts, @stderr)
     end
 
+    def print_plan(model_name, format)
+      eager_load
+      klass = model_name.safe_constantize
+      raise ConfigurationError, "#{model_name.inspect} is not a loaded ActiveRecord model" unless klass.respond_to?(:replicate)
+
+      plan = ModelConfig.plan_for(klass)
+      raise ConfigurationError, "#{klass} has no replicate block" if plan.equal?(ModelConfig::NONE)
+
+      problems = plan.problems
+      raise ConfigurationError, problems.join("\n") unless problems.empty?
+
+      @stdout.write PlanReport.render(plan.to_h, format)
+    end
+
     def load_stream(options)
       if Deckard.production_environment? && !options[:force]
         raise LoadError, "refusing to load into a production environment (pass --force to override)"
       end
 
-      @stdin.binmode if @stdin.respond_to?(:binmode)
+      @stdin.binmode
       loader = Loader.new(@stdin) { |counts| Status.progress("loading", counts, @stderr) }
       loader.load
       Status.report("loaded", loader.counts, @stderr)

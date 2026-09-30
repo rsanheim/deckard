@@ -1,6 +1,6 @@
 # Deckard v1.0 Specification
 
-**Status:** Draft  
+**Status:** Current for 0.2.0. Sections 19 to 21 record the implementation plan and deferrals.  
 **Gem:** `deckard`  
 **Executable:** `deckard`  
 **Ruby namespace:** `Deckard`  
@@ -133,7 +133,6 @@ The original README’s small configuration surface remains available:
 - Additional associations.
 - Natural keys.
 - Explicit field omissions and association omissions.
-- Per-`dump` association and omission options.
 - `dump_replicant` and `load_replicant` hooks.
 
 These features should remain small and direct rather than becoming a generalized plugin or policy framework.
@@ -231,7 +230,12 @@ The `-r` option requires a Ruby file before evaluating or loading anything:
 deckard -r ./config/environment -d "User.find(1)"
 ```
 
-This normally boots Rails and loads the application’s model classes.
+This normally boots Rails and loads the application’s model classes. Before a
+dump, Deckard eager loads the application (through Zeitwerk, when present) so
+every model’s `replicate` block has run, and validates every plan (section
+7.5) before any record is written. A load consults no plan: each record
+arrives with its natural key (section 9.2), so the destination's `replicate`
+blocks are neither loaded nor checked.
 
 ### 6.3 Dump scripts
 
@@ -260,7 +264,7 @@ deckard -d config/deckard/dump-stuff.rb > repos.dump
 When the argument to `-d` resolves to a file, Deckard evaluates that file in a small context exposing:
 
 ```ruby
-dump(object, options = {})
+dump(object)
 ```
 
 A script may call `dump` as many times as necessary. Command-line arguments
@@ -299,7 +303,23 @@ reported by `Rails.env` or, without Rails, `RAILS_ENV` or `RACK_ENV`. The
 refusal is a `LoadError` raised before any frame is read. `--force`
 overrides it for the rare deliberate case.
 
-### 6.5 Application output during a dump
+### 6.5 Printing a plan
+
+`--plan MODEL` prints the plan for dumps rooted at that model and exits:
+
+```bash
+deckard -r ./config/environment --plan Order
+deckard -r ./config/environment --plan Order --format json
+```
+
+The plan is built as data (`ModelConfig#to_h`: the root entry first, then
+each `model` entry, each with its associations, natural key, omitted fields
+and omitted associations) and rendered separately, as text for people or
+JSON for tools. The application is eager loaded first, and only the requested
+plan is validated; a model without a `replicate` block, or a plan with a
+problem, exits nonzero with the reason.
+
+### 6.6 Application output during a dump
 
 Deckard writes its binary stream to standard output and its own diagnostics
 to standard error. Requiring an application runs arbitrary boot code, and
@@ -313,7 +333,7 @@ stdout lands on stderr, and only the stream reaches the pipe or file. The
 operator does nothing to opt in; `> user.dump` and `| deckard -l` work as
 written regardless of what the application prints.
 
-### 6.6 Direct SSH streaming
+### 6.7 Direct SSH streaming
 
 The primary remote workflow remains a normal Unix pipeline:
 
@@ -326,13 +346,14 @@ ssh example.org "$remote_command" \
 
 SSH is only the transport. Deckard does not manage SSH connections or know anything about the remote host.
 
-### 6.7 CLI scope
+### 6.8 CLI scope
 
 The required v1.0 CLI is deliberately small:
 
 ```text
 deckard -r FILE -d EXPRESSION_OR_FILE_OR_- [ARGS...]
 deckard -r FILE -l [--force]
+deckard -r FILE --plan MODEL [--format text|json]
 deckard --version
 deckard --help
 ```
@@ -345,18 +366,68 @@ Deckard adds one configuration method to ActiveRecord models:
 
 ```ruby
 replicate do
-  # Deckard configuration
+  # the replication plan
 end
 ```
 
-The block provides four methods in v1.0:
+A dump starts from one model, and the developer configuring it thinks from
+that model outward. The `replicate` block on that root model is the plan for
+dumps rooted there: what the root carries, and, through `model`, how every
+class those dumps reach is dumped and matched. One file describes the graph:
+
+```ruby
+class Order < ActiveRecord::Base
+  belongs_to :customer
+  has_many :line_items
+
+  replicate do
+    associations :line_items
+
+    model "LineItem" do
+      associations :adjustments
+    end
+
+    model "Customer" do
+      natural_key :email
+      omit_fields :password_digest
+    end
+  end
+end
+```
+
+The block provides five methods in v1.0:
 
 ```ruby
 associations
 natural_key
 omit_fields
 omit_associations
+model
 ```
+
+`model` takes a class name and a block offering the other four. A dump
+follows its root's plan and nothing else: `dump Order` uses Order's block for
+every record it reaches, and `dump LineItem` uses LineItem's. A reached
+class's own `replicate` block is not consulted, so there is nothing to merge
+and no precedence to learn. A class the plan does not name is dumped with the
+defaults below. Classes are named as strings, so the root never forces them
+to load first, and they are matched through their ancestors: an STI subclass
+follows the entry for its nearest declared ancestor.
+
+How a record was reached decides how much of its entry applies. A record
+reached as a root, or through `has_one` or a planned collection, is owned: it
+carries what its entry says. A record reached only through `belongs_to` is a
+dependency: it carries its row and its own dependencies, so foreign keys
+resolve, and nothing it owns, however its entry reads. A line item's product
+arrives as a row; the product's reviews do not, even if the plan says
+products carry reviews. This is what keeps a dump the size of the root's
+ownership tree instead of the connected component of the database. The same
+record dumped as a dependency first and as a root or owned record later is
+written once and then walked. See `docs/traversal.md`.
+
+Natural keys travel with the records: each replicant in the stream carries
+the attributes its plan matches it by (section 9.2), so the destination needs
+no plan of its own and the source's plan drives the load.
 
 There is no `Deckard.configure` block and no separate model concern that applications must include.
 
@@ -364,9 +435,9 @@ There is no `Deckard.configure` block and no separate model concern that applica
 
 By default, dumping an ActiveRecord object includes:
 
-1. Its supported `belongs_to` associations.
+1. Its supported `belongs_to` associations, as dependencies.
 2. The object itself.
-3. Its supported `has_one` associations.
+3. Its supported `has_one` associations, when the object is owned (section 7).
 
 `has_many` associations are not included automatically because doing so can quickly pull in a large portion of the database.
 
@@ -406,7 +477,7 @@ replicate do
 end
 ```
 
-Deckard does not add nested association declarations. Deeper traversal is expressed through configuration on the associated model or through explicit calls in a dump script.
+Deckard does not add nested association declarations. Deeper traversal is expressed in the root's plan, model by model, or through further `dump` calls in a dump script.
 
 For example:
 
@@ -414,12 +485,10 @@ For example:
 class Repository < ActiveRecord::Base
   replicate do
     associations :issues
-  end
-end
 
-class Issue < ActiveRecord::Base
-  replicate do
-    associations :comments
+    model "Issue" do
+      associations :comments
+    end
   end
 end
 ```
@@ -434,34 +503,11 @@ dump repo.issues
 dump repo.issues.flat_map(&:comments)
 ```
 
-### 7.2 Per-dump associations
-
-A dump script may add associations for a particular call:
-
-```ruby
-dump User.all, associations: [:email_addresses]
-```
-
-These associations are combined with those declared in the model’s `replicate` block,
-for the objects passed to that `dump` call only. Records reached through the traversal
-are dumped with their own model configuration and no per-dump options, as in the
-original `replicate`. A dump script expresses a deeper cascade with further `dump`
-calls; the identity set keeps every record in the stream once:
-
-```ruby
-dump user, associations: [:posts]
-dump user.posts, associations: [:comments]
-```
-
-Each per-dump association must exist on the dumped object’s class, or the dump raises.
-
-This remains a Ruby API used by dump scripts. It does not become a CLI option.
-
-### 7.3 Natural keys
+### 7.2 Natural keys
 
 By default, the loader creates a new destination record and assigns it a new destination primary key.
 
-A model can define a natural key when existing destination records should be reused:
+A plan can define a natural key when existing destination records should be reused:
 
 ```ruby
 class User < ActiveRecord::Base
@@ -471,26 +517,24 @@ class User < ActiveRecord::Base
   replicate do
     natural_key :login
     associations :email_addresses
-  end
-end
 
-class EmailAddress < ActiveRecord::Base
-  belongs_to :user
-
-  replicate do
-    natural_key :user_id, :email
+    model "EmailAddress" do
+      natural_key :user_id, :email
+    end
   end
 end
 ```
 
 A natural key may contain one or more attributes.
 
-When loading a record with a natural key, Deckard:
+The key travels with each record in the stream. When loading a record with a natural key, Deckard:
 
 1. Resolves any replicated foreign-key references in the natural key.
 2. Looks for an existing destination record matching all natural-key attributes.
 3. Updates that record if exactly one match exists.
 4. Creates a new record with a new destination primary key if no match exists.
+   If that insert fails, the error names the natural key that matched nothing,
+   since a row the plan expected to find is the usual cause.
 5. Fails if the lookup is ambiguous.
 
 The source-to-destination ID map points at either the newly created record or the reused destination record.
@@ -512,7 +556,7 @@ Dependent records are then rewritten to reference destination user `8`.
 
 Natural keys are explicit. Deckard does not inspect all unique indexes and guess which ones should identify shared records.
 
-### 7.4 Omitting fields
+### 7.3 Omitting fields
 
 Fields may be excluded from a model's dumped attributes:
 
@@ -540,7 +584,7 @@ Deckard still traverses `organization`, but `organization_id` is not included in
 dumped row. If an explicitly omitted field causes a destination constraint violation,
 the load fails normally.
 
-### 7.5 Omitting associations
+### 7.4 Omitting associations
 
 Associations may be excluded from graph traversal independently of dumped fields:
 
@@ -572,46 +616,30 @@ Deckard copies both `scope_id` and `scope_type` exactly as stored but does not t
 the raw foreign key violates a destination constraint, the load fails normally; Deckard
 does not silently remove or rewrite fields.
 
-### 7.6 Per-dump omissions
+### 7.5 Plan validation
 
-A dump script may apply the same ActiveRecord-specific configuration for a particular
-call:
-
-```ruby
-dump User.all,
-  omit_fields: [:created_at],
-  omit_associations: [:profile]
-```
-
-Per-dump field and association omissions are combined with the corresponding model
-configuration and, like per-dump associations, apply only to the objects passed to that
-`dump` call. These keys are interpreted by ActiveRecord's `dump_replicant`
-implementation. The generic `dump(object, options = {})` API remains unchanged and
-passes its options to each root object's replicant implementation.
-
-### 7.7 Configuration inheritance
-
-Deckard model configuration follows ActiveRecord inheritance:
-
-- A subclass begins with its superclass’s configuration.
-- Additional associations, field omissions, and association omissions are additive.
-- A subclass may define its own natural key.
-- Mutating a subclass’s configuration must not mutate the superclass’s configuration.
-
-Deckard does not attempt special dispatch for complicated STI collections in v1.0.
+Plans are validated before a stream starts. The `deckard` executable eager
+loads the application after requiring it, so every `replicate` block has run,
+then checks every plan: each class named by `model` must be a loaded
+ActiveRecord model, each configured association must exist and be of a
+supported kind, and each natural-key or omitted attribute must exist.
+Validation reports every problem at once as a `ConfigurationError` before any
+record is dumped. Dumping through the Ruby API checks each entry when the
+first record of its class is dumped. A load validates nothing: it needs no
+plan.
 
 ## 8. Traversal behavior
 
 The default ActiveRecord traversal order is:
 
 ```text
-belongs_to associations
+belongs_to associations          (dependencies: row and their own dependencies)
 current record
-has_one associations
-explicitly configured associations
+has_one associations             (owned records only)
+planned collections              (owned records only)
 ```
 
-This ordering ensures that a record normally appears after the records referenced by its foreign keys.
+This ordering ensures that a record normally appears after the records referenced by its foreign keys, and that only records the root owns, directly or through other owned records, open up their own collections.
 
 For example:
 
@@ -666,7 +694,7 @@ Arrays and other enumerables supplied by application code are iterated normally.
 
 Calling `dump` on an object that has already been emitted does not emit it again.
 
-Model configuration and options passed on the first traversal determine which of that object’s associations are followed during that traversal.
+The root's plan on the first traversal determines which of that object’s associations are followed during that traversal.
 
 When a dump script needs an additional collection, the simple and explicit solution is to dump that collection:
 
@@ -683,12 +711,10 @@ Deckard relies on reference ordering rather than disabling PostgreSQL constraint
 
 Ordinary inverse-association cycles are stopped by the dumped-object identity set.
 
-A record reached again while its own dump is in progress (through a parent’s
-configured collection, for example) is emitted at that point once its own parents are
-in the stream, as in the original `replicate`; the outer traversal’s later write is a
-no-op.
-
-A graph requiring a record to reference another new record that cannot be emitted first is unsupported in v1.0 and produces an error.
+A record reached again while its own dump is in progress can only have been
+reached through its dependencies, which means they lead back to it. That is a
+dependency cycle: a graph requiring a record to reference another new record
+that cannot be emitted first is unsupported in v1.0 and produces an error.
 
 Deckard does not add placeholder rows, deferred repair passes, or automatic constraint disabling to accommodate such graphs.
 
@@ -712,7 +738,7 @@ Conceptually:
 Marshal.dump([:deckard, 1], output)
 
 Marshal.dump(
-  ["User", 1234, { "name" => "Rob" }],
+  ["User", 1234, { "name" => "Rob" }, ["login"]],
   output
 )
 
@@ -728,7 +754,7 @@ A dump produced by the old `replicate` gem is not required to load in Deckard.
 Every dumped object is represented by:
 
 ```ruby
-[type, source_id, attributes]
+[type, source_id, attributes, natural_key]
 ```
 
 Where:
@@ -736,6 +762,8 @@ Where:
 - `type` is a class-name string.
 - `source_id` identifies the object in the source environment.
 - `attributes` is a hash with string keys and serializable Ruby values.
+- `natural_key` is the array of attribute names the destination matches an
+  existing record by, empty when the record is always inserted.
 
 The combination of `type` and `source_id` must be unique within the stream.
 
@@ -756,7 +784,8 @@ For example:
   {
     "number" => "R-123",
     "user_id" => [:id, "User", 1234]
-  }
+  },
+  ["number"]
 ]
 ```
 
@@ -891,7 +920,7 @@ Applications that explicitly need post-load behavior may override `load_replican
 
 ```ruby
 class User < ActiveRecord::Base
-  def self.load_replicant(type, id, attributes)
+  def self.load_replicant(type, id, attributes, natural_key)
     destination_id, object = super
 
     object.register_in_redis
@@ -917,13 +946,13 @@ This keeps the core dumper and loader small: ActiveRecord support is itself an i
 A custom object may implement:
 
 ```ruby
-dump_replicant(dumper, options = {})
+dump_replicant(dumper)
 ```
 
 The method writes one replicant through:
 
 ```ruby
-dumper.write(type, id, attributes, object)
+dumper.write(type, id, attributes, natural_key = [])
 ```
 
 Example:
@@ -933,13 +962,13 @@ class User
   attr_reader :id
   attr_accessor :name, :email
 
-  def dump_replicant(dumper, options = {})
+  def dump_replicant(dumper)
     attributes = {
       "name" => name,
       "email" => email
     }
 
-    dumper.write(self.class, id, attributes, self)
+    dumper.write(self.class, id, attributes)
   end
 end
 ```
@@ -949,14 +978,15 @@ end
 The corresponding class implements:
 
 ```ruby
-load_replicant(type, source_id, attributes)
+load_replicant(type, source_id, attributes, natural_key)
 ```
 
-Example:
+`natural_key` is the array of attribute names the record travels with
+(section 9.2); a custom loader may use or ignore it. Example:
 
 ```ruby
 class User
-  def self.load_replicant(type, id, attributes)
+  def self.load_replicant(type, id, attributes, natural_key)
     user = User.new
     user.name = attributes["name"]
     user.email = attributes["email"]
@@ -1013,10 +1043,10 @@ Deckard should use a small error hierarchy:
 
 ```ruby
 Deckard::Error
+Deckard::ConfigurationError
 Deckard::DumpError
 Deckard::OutputError
 Deckard::LoadError
-Deckard::UnsupportedAssociation
 Deckard::UnresolvedReference
 Deckard::InvalidStream
 Deckard::InsertError
@@ -1025,13 +1055,19 @@ Deckard::InsertError
 Errors should include enough context to identify the problem:
 
 ```text
-Deckard::UnsupportedAssociation:
-Author(812).bookmarked_posts is a has_and_belongs_to_many association, which deckard does not support
+Deckard::ConfigurationError:
+Author.bookmarked_posts is a has_and_belongs_to_many association, which deckard does not support
 ```
 
 ```text
 Deckard::UnresolvedReference:
 Order(500).user_id references User(1234), which has not been loaded
+```
+
+```text
+Deckard::ConfigurationError:
+Order has no :line_item association
+"Customr" is named in a replicate block, but is not a loaded ActiveRecord model
 ```
 
 ```text
@@ -1096,6 +1132,7 @@ Deckard::CLI
 Deckard::Dumper
 Deckard::Loader
 Deckard::ModelConfig
+Deckard::PlanReport
 Deckard::ActiveRecord
 Deckard::Status
 ```
@@ -1107,6 +1144,8 @@ Responsibilities:
 - Parse `-r`, `-d`, and `-l`.
 - Reserve standard output for the stream before requiring the application.
 - Require the application environment.
+- Before a dump, eager load the application and validate every plan.
+- Print a root's plan on request, as text or JSON.
 - Evaluate dump expressions and scripts.
 - Connect standard input and output to the dumper or loader.
 - Return useful process statuses.
@@ -1133,11 +1172,14 @@ Responsibilities:
 
 ### `Deckard::ModelConfig`
 
-- Store associations.
-- Store the optional natural key.
-- Store field omissions and association omissions separately.
-- Implement inheritance without shared mutable arrays.
-- Back the `replicate do ... end` model DSL.
+- Hold one root's plan as one table of entries, the root's included: each
+  entry's associations, optional natural key, and field and association
+  omissions, for classes that may not have loaded yet.
+- Back the `replicate do ... end` DSL.
+- Resolve the plan for a root, and the entry for a reached class, through
+  their ancestors, checking each entry against its class once.
+- Validate every plan on demand, reporting every problem.
+- Describe a plan as plain data for `Deckard::PlanReport` to render.
 
 ### `Deckard::ActiveRecord`
 
@@ -1146,10 +1188,17 @@ Responsibilities:
 - Implement ActiveRecord `load_replicant`.
 - Add nothing else to model classes: those three are the only methods
   Deckard defines on `ActiveRecord::Base`. Traversal and loading are plain
-  objects inside the module, not private model methods.
+  objects inside the module, not private model methods. Records reached
+  from a root are dumped by its plan directly, so an ActiveRecord model's
+  override of `dump_replicant` applies to roots only.
 - Traverse supported reflections.
 - Encode foreign-key references.
 - Insert or update rows without callbacks.
+
+### `Deckard::PlanReport`
+
+- Render a plan's data as text or JSON, and nothing else: a new output
+  format is a new renderer, never a change to the plan.
 
 ### `Deckard::Status`
 
@@ -1175,6 +1224,7 @@ Deckard v1.0 must maintain these invariants:
 11. A stream without a successful-end marker does not commit.
 12. The loader never silently leaves an unresolved source foreign key in a destination row.
 13. Unsupported behavior raises rather than being approximated.
+14. A record reached only through `belongs_to` carries nothing it owns.
 
 ## 18. Acceptance criteria
 
@@ -1224,13 +1274,25 @@ end
 
 causes the configured collection to be included.
 
-### 18.6 Per-dump association configuration
+### 18.6 Root-model plan
 
 ```ruby
-dump User.all, associations: [:email_addresses]
+class Order < ActiveRecord::Base
+  replicate do
+    associations :line_items
+    model "LineItem" do
+      associations :adjustments
+    end
+  end
+end
 ```
 
-includes the collection for that dump.
+dumps each line item's adjustments whether `LineItem` loads before or after
+`Order`; `dump LineItem.first` follows LineItem's own block, not Order's; a
+product reached from a line item arrives as a row without the collections
+its own entry names; and a plan naming a missing class, association, or
+attribute fails with `ConfigurationError` before any record is dumped or
+loaded through the executable.
 
 ### 18.7 ID remapping
 
@@ -1366,9 +1428,7 @@ end
 Then implement:
 
 - Selected `has_many`.
-- Per-dump `associations:`.
-- Per-dump `omit_fields:` and `omit_associations:`.
-- Configuration inheritance.
+- `model` entries for reached classes.
 - Natural-key updates.
 
 ### Phase 5: Original CLI
@@ -1442,8 +1502,8 @@ Deckard v1.0 will:
 - Preserve the original `replicate` command shape.
 - Use `deckard` as the gem and executable name.
 - Use `Deckard` as the Ruby namespace.
-- Use `replicate do ... end` for namespaced model configuration.
-- Expose only `associations`, `natural_key`, `omit_fields`, and `omit_associations` inside that block.
+- Use `replicate do ... end` on a root model as the plan for everything its dumps reach, and nothing else.
+- Expose only `associations`, `natural_key`, `omit_fields`, `omit_associations`, and `model` inside that block.
 - Retain dump expressions and ordinary Ruby dump scripts.
 - Retain `dump_replicant` and `load_replicant`.
 - Stream directly over standard input and output.
@@ -1458,10 +1518,10 @@ Deckard v1.0 will:
 
 The governing product test is simple:
 
-> A developer who remembers the original `replicate` gem should be able to use Deckard immediately, with the model configuration now gathered into one small `replicate` block.
+> A developer who remembers the original `replicate` gem should be able to use Deckard immediately, with the whole plan for a dump gathered into one `replicate` block on its root model.
 
 ## Historical API baseline
 
-The original README defines expression dumps, ordinary Ruby dump scripts, `-r`/`-d`/`-l`, direct SSH piping, automatic singular associations, explicit collection associations, natural keys, omission, and the custom replicant hooks that form Deckard’s API baseline. citeturn463963view0L179-L361
+The original README defines expression dumps, ordinary Ruby dump scripts, `-r`/`-d`/`-l`, direct SSH piping, automatic singular associations, explicit collection associations, natural keys, omission, and the custom replicant hooks that form Deckard’s API baseline.
 
-The original implementation streamed each record independently using `Marshal.dump([type, id, attrs], io)`, rather than accumulating the complete dump first. Deckard retains that small row-oriented design while adding explicit stream version and completion frames. citeturn884208view4L516-L540
+The original implementation streamed each record independently using `Marshal.dump([type, id, attrs], io)`, rather than accumulating the complete dump first. Deckard retains that small row-oriented design while adding explicit stream version and completion frames.

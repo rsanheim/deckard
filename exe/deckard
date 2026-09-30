@@ -4,4 +4,4 @@
 require "deckard"
 require "deckard/cli"
 
-exit Deckard::CLI.run(ARGV)
+exit Deckard::CLI.new.run(ARGV)
