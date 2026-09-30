@@ -47,15 +47,13 @@ module Deckard
     end
 
     # DSL: attributes identifying an existing destination record to reuse.
-    # A plan gives each class one key; a second declaration is a problem
-    # validation reports, never a quiet override.
+    # Declaring it twice in one plan is a problem, not an override.
     def natural_key(*attributes)
       @redeclared_natural_key = !@natural_key_attributes.empty?
       @natural_key_attributes = attributes.map(&:to_s)
     end
 
-    # DSL: the natural key of each class the plan's dumps reach, as one table
-    # of class name to attribute name or names.
+    # DSL: class name to natural key, for reached classes needing nothing else.
     def natural_keys(keys)
       keys.each { |name, attributes| model(name) { natural_key(*attributes) } }
     end

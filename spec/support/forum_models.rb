@@ -80,10 +80,7 @@ end
 class AnnouncementCategory < Category
 end
 
-# Deliberately broken: names an association and an attribute the model
-# lacks, a model that does not exist, an unsupported association on a
-# reached class, and a natural key given twice for one class. Whole-plan
-# validation must report all of it.
+# Deliberately broken in five ways; whole-plan validation must report all.
 class MisconfiguredCategory < ActiveRecord::Base
   self.table_name = "categories"
 
