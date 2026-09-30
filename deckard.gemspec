@@ -22,7 +22,7 @@ Gem::Specification.new do |spec|
   # Ship only the library, executable, and top-level docs. A plain glob (not
   # `git ls-files`) so the gem also resolves as a path dependency in contexts
   # without a .git directory, such as the harness docker image.
-  spec.files = Dir.glob(%w[lib/**/*.rb exe/* README.md LICENSE.txt], base: __dir__)
+  spec.files = Dir.glob(%w[lib/**/*.rb exe/* README.md CHANGELOG.md LICENSE.txt], base: __dir__)
   spec.bindir = "exe"
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
