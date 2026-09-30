@@ -533,6 +533,8 @@ The key travels with each record in the stream. When loading a record with a nat
 2. Looks for an existing destination record matching all natural-key attributes.
 3. Updates that record if exactly one match exists.
 4. Creates a new record with a new destination primary key if no match exists.
+   If that insert fails, the error names the natural key that matched nothing,
+   since a row the plan expected to find is the usual cause.
 5. Fails if the lookup is ambiguous.
 
 The source-to-destination ID map points at either the newly created record or the reused destination record.

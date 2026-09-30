@@ -22,13 +22,15 @@ module Deckard
 
       private
 
-      def insert
+      # `because` says what led to the insert when it was not the only path,
+      # so a failure names the natural key that matched nothing.
+      def insert(because = "")
         result = @model.insert_all!([@attributes.except(@model.primary_key)], returning: [@model.primary_key])
         destination_id = result.rows.first.first
         [destination_id, @model.find(destination_id)]
       rescue ::ActiveRecord::ActiveRecordError => e
         raise InsertError,
-          "#{@type} source_id=#{@source_id} could not be inserted: #{Deckard.error_detail(e)}"
+          "#{@type} source_id=#{@source_id} #{because}could not be inserted: #{Deckard.error_detail(e)}"
       end
 
       def load_by_natural_key
@@ -37,7 +39,7 @@ module Deckard
 
         case matches.size
         when 0
-          insert
+          insert("matched no destination row by natural key (#{lookup.keys.join(", ")}) and ")
         when 1
           record = matches.first
           begin

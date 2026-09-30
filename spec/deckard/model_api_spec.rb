@@ -167,6 +167,18 @@ RSpec.describe "replicate model DSL", :db do
     expect(Author.sole.username).to eq("rob")
   end
 
+  it "says the natural key matched nothing when the insert that follows fails" do
+    Visitor.create!(username: "rachael", name: "Rachael")
+    io, _ = stream(Visitor.all)
+
+    DeckardTestDatabase.truncate
+
+    expect { Deckard::Loader.new(io).load }.to raise_error(
+      Deckard::InsertError,
+      /\AVisitor source_id=\d+ matched no destination row by natural key \(username\) and could not be inserted: PG::NotNullViolation/
+    )
+  end
+
   it "matches by the natural key the record travels with, not the destination's plan" do
     Tag.create!(name: "replicants", slug: "replicants")
     io = StringIO.new

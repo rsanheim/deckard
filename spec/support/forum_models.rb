@@ -110,6 +110,18 @@ class MisconfiguredCategory < ActiveRecord::Base
   end
 end
 
+# An author matched by username whose name never travels, over the authors
+# table: on a destination without that author, the insert has no name to
+# give and fails.
+class Visitor < ActiveRecord::Base
+  self.table_name = "authors"
+
+  replicate do
+    natural_key :username
+    omit_fields :name
+  end
+end
+
 # Deliberately unsupported plans, over the authors table: a selected
 # has_and_belongs_to_many and a selected has_many :through.
 class Bookmarker < ActiveRecord::Base
