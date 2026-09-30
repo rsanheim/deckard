@@ -9,7 +9,7 @@ module Deckard
       # dumped: the destination database computes them, and PostgreSQL
       # rejects explicit inserts into them. Computed once per model class.
       GENERATED_COLUMNS = Hash.new do |cache, model|
-        cache[model] = model.columns.select { |column| column.respond_to?(:virtual?) && column.virtual? }.map(&:name)
+        cache[model] = model.columns.select(&:virtual?).map(&:name)
       end
 
       def self.source_id(record)

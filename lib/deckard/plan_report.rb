@@ -16,11 +16,7 @@ module Deckard
     }.freeze
 
     def self.render(plan, format)
-      case format
-      when "text" then text(plan)
-      when "json" then "#{JSON.pretty_generate(plan)}\n"
-      else raise ArgumentError, "unknown plan format #{format.inspect}; use one of #{FORMATS.join(", ")}"
-      end
+      (format == "json") ? "#{JSON.pretty_generate(plan)}\n" : text(plan)
     end
 
     def self.text(plan)

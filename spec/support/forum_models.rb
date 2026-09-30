@@ -11,12 +11,10 @@ require "active_record"
 class Author < ActiveRecord::Base
   has_one :profile
   has_many :posts
-  has_many :comments
   has_many :author_emails
   has_many :reactions
   has_many :donations
   has_many :attachments
-  has_many :commented_posts, through: :comments, source: :post
   has_and_belongs_to_many :bookmarked_posts,
     class_name: "Post",
     join_table: "bookmarks",
@@ -153,9 +151,6 @@ class Post < ActiveRecord::Base
   has_many :comments
   has_many :post_tags
   has_many :tags, through: :post_tags
-  has_many :reactions, as: :reactable
-  has_many :donations
-  has_many :post_views
 
   # A post and its comment threads. Authors and the category are reached by
   # reference: their own plans are never consulted here, so a post dump
@@ -182,7 +177,6 @@ class Comment < ActiveRecord::Base
   belongs_to :parent, class_name: "Comment", optional: true
   has_many :replies, class_name: "Comment", foreign_key: :parent_id
   has_many :mentions
-  has_many :reactions, as: :reactable
 
   replicate do
     model "Author" do
@@ -193,7 +187,6 @@ end
 
 class Tag < ActiveRecord::Base
   has_many :post_tags
-  has_many :posts, through: :post_tags
 
   replicate do
     natural_key :name

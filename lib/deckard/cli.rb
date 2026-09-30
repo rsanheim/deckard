@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "optimist"
+require_relative "plan_report"
 require_relative "status"
 
 module Deckard
@@ -9,10 +10,6 @@ module Deckard
   # from stdin, --plan prints a root model's plan. Required from
   # exe/deckard, not from the library itself.
   class CLI
-    def self.run(argv, stdin: $stdin, stdout: $stdout, stderr: $stderr)
-      new(stdin: stdin, stdout: stdout, stderr: stderr).run(argv)
-    end
-
     # Evaluation context for dump scripts and -d expressions: exposes only
     # dump(object). Scripts see any extra command-line arguments in ARGV.
     class DumpScript
@@ -25,10 +22,10 @@ module Deckard
       end
     end
 
-    def initialize(stdin:, stdout:, stderr:)
-      @stdin = stdin
-      @stdout = stdout
-      @stderr = stderr
+    def initialize
+      @stdin = $stdin
+      @stdout = $stdout
+      @stderr = $stderr
     end
 
     def run(argv)
@@ -60,8 +57,6 @@ module Deckard
     # its children write to stdout lands on stderr instead.
     # rubocop:disable Style/GlobalStdStream -- the process-level streams are the point
     def reserve_stdout
-      return unless @stdout.equal?(STDOUT)
-
       @stdout = STDOUT.dup
       STDOUT.reopen(STDERR)
       $stdout = STDOUT
@@ -96,12 +91,16 @@ module Deckard
       options
     end
 
-    # Every replicate block must have run before the plans are checked, and
-    # Rails only eager loads on its own when config.eager_load is on.
-    def dump(target)
+    # Every replicate block must have run before a plan is read, and Rails
+    # only eager loads on its own when config.eager_load is on.
+    def eager_load
       Zeitwerk::Loader.eager_load_all if defined?(Zeitwerk::Loader)
+    end
+
+    def dump(target)
+      eager_load
       ModelConfig.validate!
-      @stdout.binmode if @stdout.respond_to?(:binmode)
+      @stdout.binmode
       dumper = Dumper.new(@stdout) { |counts| Status.progress("dumping", counts, @stderr) }
       script = DumpScript.new(dumper)
 
@@ -119,7 +118,7 @@ module Deckard
     end
 
     def print_plan(model_name, format)
-      Zeitwerk::Loader.eager_load_all if defined?(Zeitwerk::Loader)
+      eager_load
       klass = model_name.safe_constantize
       raise ConfigurationError, "#{model_name.inspect} is not a loaded ActiveRecord model" unless klass.respond_to?(:replicate)
 
@@ -137,7 +136,7 @@ module Deckard
         raise LoadError, "refusing to load into a production environment (pass --force to override)"
       end
 
-      @stdin.binmode if @stdin.respond_to?(:binmode)
+      @stdin.binmode
       loader = Loader.new(@stdin) { |counts| Status.progress("loading", counts, @stderr) }
       loader.load
       Status.report("loaded", loader.counts, @stderr)

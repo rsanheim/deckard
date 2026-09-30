@@ -16,7 +16,7 @@ class FakeAuthor
   end
 
   attr_reader :id
-  attr_accessor :name
+  attr_reader :name
 
   def initialize(id:, name:)
     @id = id
@@ -46,7 +46,7 @@ class FakePost
   end
 
   attr_reader :id
-  attr_accessor :title, :author, :author_id
+  attr_reader :title, :author, :author_id
 
   def initialize(id:, title:, author: nil, author_id: nil)
     @id = id

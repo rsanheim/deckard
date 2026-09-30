@@ -37,7 +37,7 @@ class PerfConcurrencyRecord
   end
 
   class << self
-    attr_accessor :loaded_count, :dumper_done
+    attr_accessor :loaded_count
   end
 
   def self.load_replicant(type, source_id, attributes, natural_key)
@@ -71,7 +71,6 @@ end
 RSpec.describe "Deckard stream performance", perf: true do
   it "streams concurrently: the loader processes records while the dumper is still writing" do
     PerfConcurrencyRecord.loaded_count = 0
-    PerfConcurrencyRecord.dumper_done = false
     loaded_count_at_dumper_done = nil
     record_count = 5_000
 
@@ -82,7 +81,6 @@ RSpec.describe "Deckard stream performance", perf: true do
       record_count.times { |i| dumper.dump(PerfConcurrencyRecord.new(id: i)) }
       dumper.complete
       loaded_count_at_dumper_done = PerfConcurrencyRecord.loaded_count
-      PerfConcurrencyRecord.dumper_done = true
       writer.close
     end
 

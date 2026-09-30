@@ -40,7 +40,7 @@ module Deckard
     # visit is in progress is a dependency cycle: the block is skipped, and
     # callers that need the identity written first check #dumped? and raise.
     def visit(type, id, walk:)
-      key = [type.to_s, id]
+      key = [type, id]
       return if @in_progress.include?(key) || (walk ? @walked : @dumped).include?(key)
 
       @walked.add(key) if walk
@@ -53,7 +53,7 @@ module Deckard
     end
 
     def dumped?(type, id)
-      @dumped.include?([type.to_s, id])
+      @dumped.include?([type, id])
     end
 
     # Called by dump_replicant implementations to emit one replicant tuple.
@@ -61,9 +61,8 @@ module Deckard
     # existing record to reuse; empty means always insert.
     def write(type, id, attributes, natural_key = [])
       type = type.to_s
-      return if @dumped.include?([type, id])
+      return unless @dumped.add?([type, id])
 
-      @dumped.add([type, id])
       write_frame([type, id, attributes, natural_key])
       @counts[type] += 1
       @after_write&.call(@counts)
