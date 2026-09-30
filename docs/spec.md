@@ -1,6 +1,6 @@
 # Deckard v1.0 Specification
 
-**Status:** Draft  
+**Status:** Current for 0.2.0. Sections 19 to 21 record the implementation plan and deferrals.  
 **Gem:** `deckard`  
 **Executable:** `deckard`  
 **Ruby namespace:** `Deckard`  
@@ -1522,6 +1522,6 @@ The governing product test is simple:
 
 ## Historical API baseline
 
-The original README defines expression dumps, ordinary Ruby dump scripts, `-r`/`-d`/`-l`, direct SSH piping, automatic singular associations, explicit collection associations, natural keys, omission, and the custom replicant hooks that form Deckard’s API baseline. citeturn463963view0L179-L361
+The original README defines expression dumps, ordinary Ruby dump scripts, `-r`/`-d`/`-l`, direct SSH piping, automatic singular associations, explicit collection associations, natural keys, omission, and the custom replicant hooks that form Deckard’s API baseline.
 
-The original implementation streamed each record independently using `Marshal.dump([type, id, attrs], io)`, rather than accumulating the complete dump first. Deckard retains that small row-oriented design while adding explicit stream version and completion frames. citeturn884208view4L516-L540
+The original implementation streamed each record independently using `Marshal.dump([type, id, attrs], io)`, rather than accumulating the complete dump first. Deckard retains that small row-oriented design while adding explicit stream version and completion frames.

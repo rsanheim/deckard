@@ -1,24 +1,15 @@
-# README
+# End-to-end harness
 
-This README would normally document whatever steps are necessary to get the
-application up and running.
+A real Rails application, streamed between two docker compose containers the
+way an operator would use deckard: a source app with its own PostgreSQL dumps
+through `bin/dump`, a destination app with its own PostgreSQL loads through
+`bin/load`, and `bin/verify` checks the result. No ports reach the host.
 
-Things you may want to cover:
+Run it from the repository root:
 
-* Ruby version
+```bash
+bundle exec rake e2e
+```
 
-* System dependencies
-
-* Configuration
-
-* Database creation
-
-* Database initialization
-
-* How to run the test suite
-
-* Services (job queues, cache servers, search engines, etc.)
-
-* Deployment instructions
-
-* ...
+The harness never runs the gem's RSpec suite, and the gem suite never depends
+on these containers.
