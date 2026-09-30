@@ -395,17 +395,37 @@ class Order < ActiveRecord::Base
 end
 ```
 
-The block provides five methods in v1.0:
+The block provides six methods in v1.0:
 
 ```ruby
 associations
 natural_key
+natural_keys
 omit_fields
 omit_associations
 model
 ```
 
-`model` takes a class name and a block offering the other four. A dump
+`model` takes a class name and a block offering `associations`,
+`natural_key`, `omit_fields`, and `omit_associations` for a class the dump
+reaches. `natural_keys` takes one table of class name to attribute name or
+names and is the short form for the common case, an entry that only says how
+a class is matched:
+
+```ruby
+replicate do
+  associations :line_items
+  natural_keys "Customer" => :email, "Product" => :sku, "Warehouse" => [:region, :code]
+
+  model "Customer" do
+    omit_fields :password_digest
+  end
+end
+```
+
+A plan gives each class one natural key. Declaring it twice, in
+`natural_keys` and again in that class's `model` block, is a plan problem
+(section 7.5), never a quiet override. A dump
 follows its root's plan and nothing else: `dump Order` uses Order's block for
 every record it reaches, and `dump LineItem` uses LineItem's. A reached
 class's own `replicate` block is not consulted, so there is nothing to merge
@@ -620,9 +640,10 @@ does not silently remove or rewrite fields.
 
 Plans are validated before a stream starts. The `deckard` executable eager
 loads the application after requiring it, so every `replicate` block has run,
-then checks every plan: each class named by `model` must be a loaded
-ActiveRecord model, each configured association must exist and be of a
-supported kind, and each natural-key or omitted attribute must exist.
+then checks every plan: each class named by `model` or `natural_keys` must
+be a loaded ActiveRecord model, each configured association must exist and
+be of a supported kind, each natural-key or omitted attribute must exist,
+and no class is given a natural key more than once in the same plan.
 Validation reports every problem at once as a `ConfigurationError` before any
 record is dumped. Dumping through the Ruby API checks each entry when the
 first record of its class is dumped. A load validates nothing: it needs no
@@ -1503,7 +1524,7 @@ Deckard v1.0 will:
 - Use `deckard` as the gem and executable name.
 - Use `Deckard` as the Ruby namespace.
 - Use `replicate do ... end` on a root model as the plan for everything its dumps reach, and nothing else.
-- Expose only `associations`, `natural_key`, `omit_fields`, `omit_associations`, and `model` inside that block.
+- Expose only `associations`, `natural_key`, `natural_keys`, `omit_fields`, `omit_associations`, and `model` inside that block.
 - Retain dump expressions and ordinary Ruby dump scripts.
 - Retain `dump_replicant` and `load_replicant`.
 - Stream directly over standard input and output.

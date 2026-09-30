@@ -5,7 +5,22 @@ All notable changes to deckard are recorded here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor versions may
 change the stream format and the Ruby API.
 
-## [0.2.0] - Unreleased
+## [0.3.0] - Unreleased
+
+### Added
+
+- `natural_keys` inside a `replicate` block: one table of class name to
+  attribute name or names, the short form for a reached class that only
+  needs a natural key. `model "Name" do natural_key ... end` still works
+  for an entry that also names associations or omissions.
+
+### Changed
+
+- A plan gives each class one natural key. Declaring it twice in the same
+  plan is reported by validation as a `ConfigurationError`; before, the
+  later declaration silently replaced the earlier one.
+
+## [0.2.0] - 2026-09-30
 
 ### Changed
 

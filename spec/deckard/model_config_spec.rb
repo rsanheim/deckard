@@ -14,12 +14,34 @@ RSpec.describe Deckard::ModelConfig do
     expect(plan.omitted_associations).to eq([:profile])
   end
 
-  it "replaces the natural key when defined again" do
-    plan = Deckard::ModelConfig.new("Widget")
-    plan.natural_key :login
-    plan.natural_key :user_id, :email
+  it "fills one entry per class from a natural_keys table, one attribute or several" do
+    plan = Deckard::ModelConfig.new("Order")
+    plan.natural_keys "Customer" => :email, "Warehouse" => [:region, :code]
+    plan.model("Customer") { omit_fields :password_digest }
 
-    expect(plan.natural_key_attributes).to eq(%w[user_id email])
+    expect(plan.to_h["entries"].drop(1)).to eq([
+      {"model" => "Customer", "associations" => [], "natural_key" => ["email"],
+       "omit_fields" => ["password_digest"], "omit_associations" => []},
+      {"model" => "Warehouse", "associations" => [], "natural_key" => %w[region code],
+       "omit_fields" => [], "omit_associations" => []}
+    ])
+  end
+
+  it "reports a natural key given twice for one class instead of letting the later one win" do
+    plan = Deckard::ModelConfig.new("Order")
+    plan.natural_keys "Customer" => :email
+    plan.model("Customer") { natural_key :login }
+    customer = Class.new do
+      def self.name = "Customer"
+
+      def self.to_s = name
+
+      def self.abstract_class? = true
+    end
+
+    expect { plan.for(customer) }.to raise_error(
+      Deckard::ConfigurationError, "Customer is given a natural key more than once in the same plan"
+    )
   end
 
   it "describes itself as data, root entry first" do
