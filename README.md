@@ -211,3 +211,7 @@ manual runs using Ruby 4.0.6 and an isolated PostgreSQL 18.6 service. The
 workflow is in `.crow/ruby.yaml`; it covers specs, Standard lint, and the
 style ratchet. The Docker end-to-end harness and performance suite remain
 separate local tasks.
+
+Release automation uses a version increase and matching changelog notes in a
+pull request. See [Releasing Deckard](docs/releasing.md) for the shared workflow,
+CI gate, and one-time RubyGems trusted publisher setup.
