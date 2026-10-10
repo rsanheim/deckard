@@ -213,5 +213,5 @@ style ratchet. The Docker end-to-end harness and performance suite remain
 separate local tasks.
 
 Release automation uses a version increase and matching changelog notes in a
-pull request. See [Releasing Deckard](docs/releasing.md) for the shared workflow,
-CI gate, and one-time RubyGems trusted publisher setup.
+pull request. See [Releasing Deckard](docs/releasing.md) for the shared workflow
+and one-time RubyGems trusted publisher setup.
