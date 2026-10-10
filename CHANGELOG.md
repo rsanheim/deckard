@@ -5,6 +5,13 @@ All notable changes to deckard are recorded here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor versions may
 change the stream format and the Ruby API.
 
+## [0.3.1] - Unreleased
+
+### Changed
+
+- Verification only: exercise the matching release-note check in an unmerged
+  draft pull request. This version is not intended for publication.
+
 ## [0.3.0] - Unreleased
 
 ### Added
