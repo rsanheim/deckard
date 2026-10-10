@@ -37,10 +37,15 @@ Use these values in the trusted publisher form:
 | Workflow filename | `gem-release.yml` |
 | Workflow Repository Owner | `rsanheim` |
 | Workflow Repository Name | `.github` |
-| Environment | Leave blank |
+| Environment | `release` |
 
 The workflow filename identifies the reusable workflow. The separate workflow
 repository fields are required for this setup; see the
 [RubyGems reusable workflow instructions](https://guides.rubygems.org/trusted-publishing/#using-reusable-workflows).
 Publishing uses short-lived OIDC credentials, so no persistent RubyGems API
 key is needed in GitHub secrets.
+
+If publication fails before the gem is uploaded, fix the cause and manually
+run the Release workflow on `main`, setting `previous-ref` to the tag before
+the version increase. Confirm the target version is still unpublished before
+retrying.
