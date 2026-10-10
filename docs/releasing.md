@@ -16,6 +16,11 @@ matching changelog section. It does not poll CI after merge.
 Keep the version and notes in the reviewed pull request; there is no automated
 version bump after merge.
 
+Synchronize Deckard's own version in the PATH and CHECKSUMS entries of
+`Gemfile.lock`. Run `bundle exec rake` and
+`BUNDLE_FROZEN=true bundle exec rake build` before merging, without updating
+unrelated dependencies.
+
 The small workflow in `.github/workflows/release.yml` calls a reusable workflow in
 [`rsanheim/.github`](https://github.com/rsanheim/.github), pinned to an
 immutable commit. Release logic lives in that repository. Update
@@ -23,6 +28,11 @@ the workflow reference after reviewing a shared workflow change.
 The shared workflow change must be merged before merging a consumer update.
 
 ## One-time RubyGems setup
+
+Use the [shared setup and recovery guide](https://github.com/rsanheim/.github#readme)
+when adding a new public gem repository. In this repository, create the GitHub
+environment `release`, allowing `main`; leave required reviewers and wait timers
+off for automatic publication after merge.
 
 Before merging the first version increase, a Deckard gem owner must configure
 a RubyGems trusted publisher. This repository change does not configure the
