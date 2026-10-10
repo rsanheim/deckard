@@ -212,6 +212,6 @@ workflow is in `.crow/ruby.yaml`; it covers specs, Standard lint, and the
 style ratchet. The Docker end-to-end harness and performance suite remain
 separate local tasks.
 
-Release automation uses a version increase and matching changelog notes in a
-pull request. See [Releasing Deckard](docs/releasing.md) for the shared workflow
-and one-time RubyGems trusted publisher setup.
+See the [shared release guide](https://github.com/rsanheim/.github#readme) for
+setup and operation, and the [Deckard quick reference](docs/releasing.md) for
+the files to update in a release PR.
