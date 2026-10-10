@@ -5,7 +5,14 @@ All notable changes to deckard are recorded here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor versions may
 change the stream format and the Ruby API.
 
-## [0.3.0] - Unreleased
+## [0.3.1] - 2026-10-10
+
+### Fixed
+
+- Reject unknown names in `omit_associations` with a `ConfigurationError`,
+  so a typo cannot silently leave an association included in a dump.
+
+## [0.3.0] - 2026-09-30
 
 ### Added
 

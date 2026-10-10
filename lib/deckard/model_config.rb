@@ -105,6 +105,9 @@ module Deckard
             "which deckard does not support; replicate :#{reflection.through_reflection.name} instead"
         end
       end
+      problems += @omitted_associations.filter_map do |name|
+        "#{model} has no #{name.inspect} association" unless model.reflect_on_association(name)
+      end
       attributes = @natural_key_attributes + @omitted_fields
       unless attributes.empty? || model.abstract_class?
         missing = attributes - model.attribute_names

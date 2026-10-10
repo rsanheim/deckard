@@ -1,6 +1,33 @@
 # frozen_string_literal: true
 
+require "active_record"
+
 RSpec.describe Deckard::ModelConfig do
+  it "reports misspelled omitted associations together" do
+    stub_const("ConfigWidget", Class.new(ActiveRecord::Base))
+    ConfigWidget.has_one :profile
+    plan = Deckard::ModelConfig.new("ConfigWidget")
+    plan.omit_associations :profiel, :sesions
+
+    expect { plan.for(ConfigWidget) }.to raise_error(
+      Deckard::ConfigurationError,
+      "ConfigWidget has no :profiel association\nConfigWidget has no :sesions association"
+    )
+  end
+
+  it "allows omitting existing associations, including unsupported traversal types" do
+    stub_const("ConfigWidget", Class.new(ActiveRecord::Base))
+    ConfigWidget.belongs_to :owner
+    ConfigWidget.has_one :profile
+    ConfigWidget.has_many :memberships
+    ConfigWidget.has_many :teams, through: :memberships
+    ConfigWidget.has_and_belongs_to_many :tags
+    plan = Deckard::ModelConfig.new("ConfigWidget")
+    plan.omit_associations :owner, :profile, :memberships, :teams, :tags
+
+    expect { plan.for(ConfigWidget) }.not_to raise_error
+  end
+
   it "accumulates associations and both omission types additively across calls" do
     plan = Deckard::ModelConfig.new("Widget")
     plan.associations :emails
