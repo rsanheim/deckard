@@ -196,7 +196,7 @@ plaintext and are re-encrypted with the destination's keys on load.
 ## Development
 
 `bundle exec rake` runs the unit/integration suite (specs against a local
-PostgreSQL 18, lint, and a style ratchet); `bin/rspec spec/deckard/stream_spec.rb`
+PostgreSQL server, lint, and a style ratchet); `bin/rspec spec/deckard/stream_spec.rb`
 runs one file. The specs run against a small forum
 schema managed with ActiveRecord's own migration and schema tooling under
 `spec/db`; `bundle exec rake -T db` lists the database tasks, and
@@ -207,10 +207,10 @@ host-side checks and the full-stack test. See `docs/spec.md` for the v1.0
 specification and `docs/traversal.md` for how a dump walks the graph.
 
 Crow CI runs `bundle exec rake` on pull requests, default-branch pushes, and
-manual runs using Ruby 4.0.9 and an isolated PostgreSQL 18.6 service. The
-workflow is in `.crow/ruby.yaml`; it covers specs, Standard lint, and the
-style ratchet. The Docker end-to-end harness and performance suite remain
-separate local tasks.
+manual runs using Ruby and an isolated PostgreSQL service. The workflow in
+[`.crow/ruby.yaml`](.crow/ruby.yaml) defines the runtime versions and covers
+specs, Standard lint, and the style ratchet. The Docker end-to-end harness and
+performance suite remain separate local tasks.
 
 See the [shared release guide](https://github.com/rsanheim/.github#readme) for
 setup and operation, and the [Deckard quick reference](docs/releasing.md) for
