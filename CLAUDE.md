@@ -33,16 +33,16 @@ bundle exec rake db:reset     # drop, create, migrate, and seed the test databas
 See [AGENTS.md](AGENTS.md#ci-and-validation) for CI coverage and validation
 commands. The Crow workflow in `.crow/ruby.yaml` runs `bundle exec rake`
 (specs, Standard lint, and the style ratchet) on PRs, default-branch pushes,
-and manual triggers. It uses Ruby 4.0.6 and PostgreSQL 18.6. E2E and performance
-tests are separate tasks; a green CI result does not cover them.
+and manual triggers. It uses Ruby and an isolated PostgreSQL service. E2E and
+performance tests are separate tasks; a green CI result does not cover them.
 
 ## Test tiers
 
 Two tiers with a hard boundary:
 
 - Unit/integration (`spec/`): a normal gem suite, runs on the host via `bundle exec rake`.
-  The ActiveRecord specs use a real local PostgreSQL 18 and fail when no server is
-  reachable. The schema is a small forum (authors, posts, threaded comments, tags,
+  The ActiveRecord specs use a real local PostgreSQL server and fail when it is
+  unreachable. The schema is a small forum (authors, posts, threaded comments, tags,
   reactions, attachments, and so on) whose ordinary features carry every shape deckard
   must handle. It is managed with ActiveRecord's own machinery, configured in
   `spec/support/database.rb`: connection settings in `spec/db/database.yml` (override
@@ -51,7 +51,7 @@ Two tiers with a hard boundary:
   realistic seed data in `spec/db/seeds.rb`. Models live in `spec/support/forum_models.rb`.
   Change the schema by editing the migration and running `rake db:reset`, then commit
   the regenerated schema.rb.
-- E2E / full-stack (`harness/`): a real Rails 8.1 app streamed between two containers,
+- E2E / full-stack (`harness/`): a real Rails app streamed between two containers,
   entirely inside docker compose — source app + source PostgreSQL, destination app +
   destination PostgreSQL, no ports exposed to the host. Run with `bundle exec rake e2e`
   (wraps `harness/bin/stream_test`). New capabilities land with unit/integration specs;

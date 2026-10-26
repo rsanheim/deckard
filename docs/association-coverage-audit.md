@@ -3,7 +3,7 @@
 *Date:* 2026-08-30
 *Method:* two research agents mapped every association type and graph topology to actual
 tests; the gap claims were spot-checked with grep, and every behavioral question was then
-answered by running a throwaway script against the real gem test database (PostgreSQL 18,
+answered by running a throwaway script against the real gem test database (PostgreSQL,
 the same `Dumper`/`Loader`/`ActiveRecord` code the specs use). Each "Verified by running:"
 line reports what actually happened. The original audit was read-only with 54 green
 examples. Follow-up changes are recorded below; the current default suite has 60 green

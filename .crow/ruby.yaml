@@ -15,12 +15,12 @@ services:
 
 steps:
   - name: test
-    image: docker.io/library/ruby:4.0.6
+    image: docker.io/library/ruby:4.0.9
     environment:
       BUNDLE_JOBS: '4'
       BUNDLE_RETRY: '3'
       BUNDLE_FROZEN: 'true'
-      BUNDLE_PATH: /cache/deckard/ruby-4.0.6/bundle
+      BUNDLE_PATH: /cache/deckard/ruby-4.0.9/bundle
       XDG_CACHE_HOME: /cache/deckard/xdg
       DECKARD_TEST_DATABASE_URL: postgres://postgres:deckard@postgres:5432/deckard_gem_test
       DECKARD_TEST_DESTINATION_DATABASE_URL: postgres://postgres:deckard@postgres:5432/deckard_gem_test_destination
