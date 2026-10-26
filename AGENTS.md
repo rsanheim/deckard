@@ -3,7 +3,7 @@
 ## CI and validation
 
 - `.crow/ruby.yaml` runs on pull requests, default-branch pushes, and manual
-  triggers using Ruby 4.0.6 and an isolated PostgreSQL 18.6 service.
+  triggers using Ruby 4.0.9 and an isolated PostgreSQL 18.6 service.
 - CI runs `bundle exec rake`: RSpec unit/integration tests, Standard lint, and
   the style ratchet (`bin/ratchet`). Gems and lint caches live under
   `/cache/deckard/`.

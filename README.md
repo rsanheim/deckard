@@ -207,7 +207,7 @@ host-side checks and the full-stack test. See `docs/spec.md` for the v1.0
 specification and `docs/traversal.md` for how a dump walks the graph.
 
 Crow CI runs `bundle exec rake` on pull requests, default-branch pushes, and
-manual runs using Ruby 4.0.6 and an isolated PostgreSQL 18.6 service. The
+manual runs using Ruby 4.0.9 and an isolated PostgreSQL 18.6 service. The
 workflow is in `.crow/ruby.yaml`; it covers specs, Standard lint, and the
 style ratchet. The Docker end-to-end harness and performance suite remain
 separate local tasks.
