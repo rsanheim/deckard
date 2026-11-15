@@ -107,6 +107,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_14_000001) do
     t.index ["post_id"], name: "index_donations_on_post_id"
   end
 
+  create_table "licenses", id: :string, force: :cascade do |t|
+    t.string "name", null: false
+  end
+
   create_table "mentions", force: :cascade do |t|
     t.bigint "comment_id", null: false
     t.string "mentioned_username", null: false
@@ -134,6 +138,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_14_000001) do
     t.datetime "created_at", null: false
     t.string "keywords", default: [], null: false, array: true
     t.string "language"
+    t.string "license_id"
     t.jsonb "metadata"
     t.datetime "published_at"
     t.virtual "search_vector", type: :tsvector, as: "to_tsvector('english'::regconfig, (((COALESCE(title, ''::character varying))::text || ' '::text) || COALESCE(body, ''::text)))", stored: true
@@ -144,6 +149,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_14_000001) do
     t.string "visibility", default: "public", null: false
     t.index ["author_id"], name: "index_posts_on_author_id"
     t.index ["category_id"], name: "index_posts_on_category_id"
+    t.index ["license_id"], name: "index_posts_on_license_id"
   end
 
   create_table "profiles", force: :cascade do |t|
@@ -186,6 +192,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_14_000001) do
   add_foreign_key "post_views", "posts"
   add_foreign_key "posts", "authors"
   add_foreign_key "posts", "categories"
+  add_foreign_key "posts", "licenses"
   add_foreign_key "profiles", "authors"
   add_foreign_key "reactions", "authors"
 end

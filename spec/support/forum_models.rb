@@ -80,6 +80,14 @@ end
 class AnnouncementCategory < Category
 end
 
+class License < ActiveRecord::Base
+  has_many :posts
+
+  replicate do
+    natural_key :id
+  end
+end
+
 # Deliberately broken in five ways; whole-plan validation must report all.
 class MisconfiguredCategory < ActiveRecord::Base
   self.table_name = "categories"
@@ -135,6 +143,7 @@ end
 class Post < ActiveRecord::Base
   belongs_to :author
   belongs_to :category, optional: true
+  belongs_to :license, optional: true
   has_many :comments
   has_many :post_tags
   has_many :tags, through: :post_tags

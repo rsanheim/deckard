@@ -31,6 +31,32 @@ RSpec.describe "ActiveRecord edge cases", :db do
     expect(new_variant.attachment_id).to eq(new_attachment.id)
   end
 
+  it "keeps a primary key the destination database cannot generate" do
+    author = create_author("rachael")
+    license = License.create!(id: "CC-BY-4.0", name: "Creative Commons Attribution 4.0")
+    Post.create!(author: author, license: license, title: "Esper photograph")
+
+    io, _ = stream(Post.all)
+    DeckardTestDatabase.truncate
+    Deckard::Loader.new(io).load
+
+    expect(License.sole.id).to eq("CC-BY-4.0")
+    expect(Post.sole.license).to eq(License.sole)
+  end
+
+  it "updates the existing row when such a primary key is the natural key" do
+    license = License.create!(id: "CC-BY-4.0", name: "Creative Commons Attribution 4.0")
+
+    io, _ = stream(license)
+    DeckardTestDatabase.truncate
+    Deckard::Loader.new(io).load
+    License.sole.update_columns(name: "stale")
+    io.rewind
+    Deckard::Loader.new(io).load
+
+    expect(License.sole.name).to eq("Creative Commons Attribution 4.0")
+  end
+
   it "follows a self-referential belongs_to chain through threaded replies" do
     author = create_author("rachael")
     post = Post.create!(author: author, title: "Nexus-6 field notes")
