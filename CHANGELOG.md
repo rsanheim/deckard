@@ -5,6 +5,15 @@ All notable changes to deckard are recorded here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor versions may
 change the stream format and the Ruby API.
 
+## [Unreleased]
+
+### Fixed
+
+- Load rows whose primary key the destination database cannot generate (no
+  default, sequence, or identity), such as an application-assigned string
+  key or a primary key that is also a foreign key. The key is inserted as it
+  arrives; dropping it failed the insert with a `NotNullViolation`.
+
 ## [0.3.1] - 2026-10-10
 
 ### Fixed

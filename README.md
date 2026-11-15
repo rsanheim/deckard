@@ -181,6 +181,10 @@ terminal, a live object counter shows progress on both ends of the pipe.
 bypassing validations and callbacks: it copies data, it does not run your
 application. If the source dies mid-stream, nothing is committed.
 
+A primary key the destination database cannot generate, such as an
+application-assigned string key, is inserted with the value it arrived with.
+Give that model a natural key if the same dump will be loaded twice.
+
 Loading refuses to run when the application environment is production. Pass
 `--force` to override.
 

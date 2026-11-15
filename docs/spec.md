@@ -84,6 +84,8 @@ By default, every newly replicated ActiveRecord row receives a primary key gener
 
 Source primary keys are used only to identify objects within the stream. They are not inserted into destination primary-key columns.
 
+The exception is a primary key the destination database cannot generate: a column with no default, sequence, or identity, such as an application-assigned string key or a key that is also a foreign key. That value is inserted as it arrives, after reference resolution, so an application-assigned key keeps the source's value and a foreign-key primary key takes the parent's destination ID.
+
 Given:
 
 ```text
@@ -869,7 +871,7 @@ New records should be inserted through a current ActiveRecord API that:
 - Bypasses validations.
 - Bypasses callbacks.
 - Applies ActiveRecord type serialization.
-- Omits the source primary key.
+- Omits the source primary key when the database generates the column (section 3.2).
 - Uses PostgreSQL `RETURNING` to obtain the new primary key.
 
 A straightforward v1 implementation may use one-row `insert_all!` calls:
@@ -1030,6 +1032,7 @@ Deckard v1.0 targets ordinary Rails models with:
 
 - One conventional primary-key column.
 - Integer, bigint, or database-generated UUID primary keys.
+- Primary keys the database does not generate, copied as described in section 3.2.
 - Conventional `belongs_to`.
 - Conventional polymorphic `belongs_to`.
 - Conventional `has_one`.
@@ -1235,7 +1238,7 @@ Deckard v1.0 must maintain these invariants:
 1. A source object is emitted no more than once.
 2. An emitted object is identified by its type and source ID.
 3. A referenced object appears before the object that references it.
-4. A source primary key is not inserted as the primary key of a newly created destination record.
+4. A source primary key is not inserted as the primary key of a newly created destination record, unless the destination database cannot generate that key.
 5. Every loaded object produces a source-to-destination ID mapping.
 6. Every reference tuple resolves through that mapping.
 7. Multiple references to one source object resolve to one destination object.
