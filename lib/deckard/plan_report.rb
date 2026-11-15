@@ -10,7 +10,7 @@ module Deckard
 
     LINES = {
       "associations" => "associations",
-      "natural_key" => "natural key",
+      "match_by" => "match by",
       "omit_fields" => "omit fields",
       "omit_associations" => "omit associations"
     }.freeze

@@ -77,7 +77,7 @@ Internal structure (spec section 16) — a few small classes, no adapter framewo
 - `Deckard::PlanReport` — renders a plan's data as text or JSON for `--plan`
 - `Deckard::ActiveRecord` — the mixin included into ActiveRecord::Base. Models gain only `replicate`, `dump_replicant`, and `load_replicant`; everything else stays in plain objects:
   - `Deckard::ActiveRecord::Dump` (lib/deckard/active_record/dump.rb) — traversal: belongs_to and has_one automatic, has_many opt-in, foreign-key re-encoding
-  - `Deckard::ActiveRecord::Load` (lib/deckard/active_record/load.rb) — callback/validation-free inserts via PostgreSQL `RETURNING`, or natural-key matched updates
+  - `Deckard::ActiveRecord::Load` (lib/deckard/active_record/load.rb) — callback/validation-free inserts via PostgreSQL `RETURNING`, or match-key updates
 - `Deckard::Status` — counts by type on stderr; stdout carries only the stream
 
 Key design constraints to preserve:

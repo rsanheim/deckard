@@ -5,6 +5,16 @@ All notable changes to deckard are recorded here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor versions may
 change the stream format and the Ruby API.
 
+## [Unreleased]
+
+### Changed
+
+- `natural_key` is now `match_by`, and `natural_keys` is now
+  `match_each_model_by`. The names say what the declaration does: the
+  destination matches an existing row by those attributes. There are no
+  aliases for the old names. `--plan` output uses `match_by` in JSON and
+  "match by" in text. The stream format is unchanged.
+
 ## [0.3.1] - 2026-10-10
 
 ### Fixed

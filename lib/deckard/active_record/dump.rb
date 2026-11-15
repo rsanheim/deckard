@@ -33,7 +33,7 @@ module Deckard
         @dumper.visit(@model.name, @source_id, walk: @owned) do
           attributes = @record.attributes.except(*GENERATED_COLUMNS[@model], *@entry.omitted_fields)
           dump_belongs_to(attributes)
-          @dumper.write(@model.name, @source_id, attributes, @entry.natural_key_attributes)
+          @dumper.write(@model.name, @source_id, attributes, @entry.match_key)
           next unless @owned
 
           owned = @model.reflect_on_all_associations(:has_one).map(&:name) | @entry.extra_associations

@@ -5,11 +5,11 @@ require "active_support/core_ext/string/inflections"
 module Deckard
   # A replication plan: a root model's `replicate do ... end` block. The plan
   # is an entry for the root plus an entry for each class its dumps reach,
-  # declared through `natural_keys` or `model`, all in one table shared by
-  # the plan's entries. A class finds its entry through its ancestors, so an
-  # STI subclass follows its nearest declared ancestor. See docs/traversal.md.
+  # declared through `match_each_model_by` or `model`, all in one table
+  # shared by the plan's entries. A class finds its entry through its
+  # ancestors, so an STI subclass follows its nearest declared ancestor. See docs/traversal.md.
   class ModelConfig
-    attr_reader :name, :extra_associations, :natural_key_attributes, :omitted_fields, :omitted_associations
+    attr_reader :name, :extra_associations, :match_key, :omitted_fields, :omitted_associations
 
     @plans = {}
 
@@ -35,7 +35,7 @@ module Deckard
       @entries[name] = self if name
       @resolved = {}
       @extra_associations = []
-      @natural_key_attributes = []
+      @match_key = []
       @omitted_fields = []
       @omitted_associations = []
     end
@@ -48,14 +48,14 @@ module Deckard
 
     # DSL: attributes identifying an existing destination record to reuse.
     # Declaring it twice in one plan is a problem, not an override.
-    def natural_key(*attributes)
-      @redeclared_natural_key = !@natural_key_attributes.empty?
-      @natural_key_attributes = attributes.map(&:to_s)
+    def match_by(*attributes)
+      @redeclared_match_key = !@match_key.empty?
+      @match_key = attributes.map(&:to_s)
     end
 
-    # DSL: class name to natural key, for reached classes needing nothing else.
-    def natural_keys(keys)
-      keys.each { |name, attributes| model(name) { natural_key(*attributes) } }
+    # DSL: class name to match key, for reached classes needing nothing else.
+    def match_each_model_by(keys)
+      keys.each { |name, attributes| model(name) { match_by(*attributes) } }
     end
 
     # DSL: fields to exclude from dumped attributes. Additive across calls.
@@ -108,15 +108,15 @@ module Deckard
       problems += @omitted_associations.filter_map do |name|
         "#{model} has no #{name.inspect} association" unless model.reflect_on_association(name)
       end
-      attributes = @natural_key_attributes + @omitted_fields
+      attributes = @match_key + @omitted_fields
       unless attributes.empty? || model.abstract_class?
         missing = attributes - model.attribute_names
         problems += missing.map { |attribute| "#{model} has no #{attribute.inspect} attribute" }
       end
-      problems += (@natural_key_attributes & @omitted_fields).map do |attribute|
-        "#{model} names #{attribute.inspect} as both a natural key attribute and an omitted field"
+      problems += (@match_key & @omitted_fields).map do |attribute|
+        "#{model} names #{attribute.inspect} as both a match key attribute and an omitted field"
       end
-      problems << "#{model} is given a natural key more than once in the same plan" if @redeclared_natural_key
+      problems << "#{model} is given a match key more than once in the same plan" if @redeclared_match_key
       problems
     end
 
@@ -126,7 +126,7 @@ module Deckard
         {
           "model" => entry.name,
           "associations" => entry.extra_associations.map(&:to_s),
-          "natural_key" => entry.natural_key_attributes,
+          "match_by" => entry.match_key,
           "omit_fields" => entry.omitted_fields,
           "omit_associations" => entry.omitted_associations.map(&:to_s)
         }

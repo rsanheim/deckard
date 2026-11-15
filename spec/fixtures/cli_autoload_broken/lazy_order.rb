@@ -7,7 +7,7 @@ require "active_record"
 class LazyOrder < ActiveRecord::Base
   replicate do
     model "Refund" do
-      natural_key :number
+      match_by :number
     end
   end
 end

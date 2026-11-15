@@ -101,7 +101,7 @@ RSpec.describe "replicate model DSL", :db do
         'MisconfiguredCategory has no "handle" attribute',
         '"Moderator" is named in a replicate block, but is not a loaded ActiveRecord model',
         "Post.tags is a has_many :through association, which deckard does not support; replicate :post_tags instead",
-        "Post is given a natural key more than once in the same plan",
+        "Post is given a match key more than once in the same plan",
         "Bookmarker.bookmarked_posts is a has_and_belongs_to_many association, " \
           "which deckard does not support; use an explicit join model and replicate that association instead",
         "Commenter.commented_posts is a has_many :through association, " \
@@ -138,7 +138,7 @@ RSpec.describe "replicate model DSL", :db do
     expect(Donation.where.not(id: donation.id).sole.post_id).to be_nil
   end
 
-  it "reuses and updates an existing destination record matched by natural key" do
+  it "reuses and updates an existing destination record matched by its match key" do
     source_author = Author.create!(username: "rob", name: "Rob", email: "rob@source.example")
     AuthorEmail.create!(author: source_author, address: "rob@shared.example", label: "from-source")
     io, _ = stream(AuthorEmail.all)
@@ -158,7 +158,7 @@ RSpec.describe "replicate model DSL", :db do
     expect(email.label).to eq("from-source")
   end
 
-  it "creates a new record when the natural key matches nothing" do
+  it "creates a new record when the match key matches nothing" do
     Author.create!(username: "rob", name: "Rob", email: "rob@source.example")
     io, _ = stream(Author.all)
 
@@ -168,7 +168,7 @@ RSpec.describe "replicate model DSL", :db do
     expect(Author.sole.username).to eq("rob")
   end
 
-  it "says the natural key matched nothing when the insert that follows fails" do
+  it "says the match key matched nothing when the insert that follows fails" do
     Visitor.create!(username: "rachael", name: "Rachael")
     io, _ = stream(Visitor.all)
 
@@ -176,11 +176,11 @@ RSpec.describe "replicate model DSL", :db do
 
     expect { Deckard::Loader.new(io).load }.to raise_error(
       Deckard::InsertError,
-      /\AVisitor source_id=\d+ matched no destination row by natural key \(username\) and could not be inserted: PG::NotNullViolation/
+      /\AVisitor source_id=\d+ matched no destination row by match key \(username\) and could not be inserted: PG::NotNullViolation/
     )
   end
 
-  it "matches by the natural key the record travels with, not the destination's plan" do
+  it "matches by the match key the record travels with, not the destination's plan" do
     Tag.create!(name: "replicants", slug: "replicants")
     io = StringIO.new
     Marshal.dump(Deckard::STREAM_HEADER, io)
@@ -188,13 +188,13 @@ RSpec.describe "replicate model DSL", :db do
     Marshal.dump(Deckard::STREAM_END, io)
     io.rewind
 
-    # Tag's own plan says natural_key :name; the record carries no key.
+    # Tag's own plan says match_by :name; the record carries no key.
     Deckard::Loader.new(io).load
 
     expect(Tag.where(name: "replicants").pluck(:slug)).to match_array(%w[replicants replicants-2])
   end
 
-  it "fails and rolls back when the natural key is ambiguous" do
+  it "fails and rolls back when the match key is ambiguous" do
     Tag.create!(name: "replicants", slug: "replicants")
     io, _ = stream(Tag.all)
 
@@ -203,7 +203,7 @@ RSpec.describe "replicate model DSL", :db do
     Tag.create!(name: "replicants", slug: "replicants-second")
 
     expect { Deckard::Loader.new(io).load }
-      .to raise_error(Deckard::LoadError, /natural key \(name\) matches more than one/)
+      .to raise_error(Deckard::LoadError, /match key \(name\) matches more than one/)
     expect(Tag.pluck(:slug)).to match_array(["replicants-first", "replicants-second"])
   end
 end

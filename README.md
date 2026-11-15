@@ -34,7 +34,7 @@ class Order < ActiveRecord::Base
     end
 
     model "Customer" do
-      natural_key :email
+      match_by :email
       omit_fields :password_digest
     end
   end
@@ -97,11 +97,11 @@ The `replicate` block offers six methods:
 ```ruby
 replicate do
   associations :line_items       # opt this has_many into dumps
-  natural_key :number            # reuse an existing destination row
+  match_by :number               # reuse an existing destination row
   omit_fields :internal_notes    # keep a field out of the stream
   omit_associations :warehouse   # do not traverse this association
 
-  natural_keys "Product" => :sku,             # how each reached class is matched
+  match_each_model_by "Product" => :sku,   # how each reached class is matched
     "Warehouse" => [:region, :code]
 
   model "LineItem" do            # the first four, for a class the dump reaches
@@ -110,15 +110,15 @@ replicate do
 end
 ```
 
-Most reached classes need nothing but a natural key, and `natural_keys` says
+Most reached classes need nothing but a match key, and `match_each_model_by` says
 that for all of them in one table. A `model` block is for the rest: a
 collection to bring along, a field to leave out. A plan gives each class one
 key, so naming it in both places is a plan problem, not an override.
 
 Classes are named as strings, so the root never forces them to load first,
 and an STI subclass follows the entry for its nearest declared ancestor. Each
-record travels with the natural key its plan gave it, so the destination
-needs no plan of its own. That also means a natural key is repeated in every
+record travels with the match key its plan gave it, so the destination
+needs no plan of its own. That also means a match key is repeated in every
 plan whose dumps reach the class: a Customer line in Order's plan and one in
 Invoice's, each saying how a customer is matched.
 
@@ -143,7 +143,7 @@ LineItem
   associations      adjustments
 
 Customer
-  natural key       email
+  match by          email
   omit fields       password_digest
 ```
 
