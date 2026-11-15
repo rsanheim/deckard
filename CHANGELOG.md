@@ -7,6 +7,11 @@ change the stream format and the Ruby API.
 
 ## [Unreleased]
 
+### Changed
+
+- Deckard loads `config/environment.rb` from the working directory by default.
+  Use `-r FILE` to specify an application boot file explicitly.
+
 ## [0.4.1] - 2026-11-17
 
 ### Changed

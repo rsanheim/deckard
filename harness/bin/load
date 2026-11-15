@@ -3,4 +3,4 @@
 #
 #   bin/load < stream.dump
 set -euo pipefail
-exec bundle exec deckard -r ./config/environment -l
+exec bundle exec deckard -l

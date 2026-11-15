@@ -5,14 +5,15 @@ require "open3"
 require "pty"
 require "stringio"
 require "tempfile"
+require "tmpdir"
 
 # Outside-in CLI specs: every example runs exe/deckard as a real subprocess
 # against the plain-Ruby models in spec/fixtures/cli_models.rb.
 RSpec.describe "deckard CLI" do
-  def run_deckard(*args, stdin: "", env: {})
+  def run_deckard(*args, stdin: "", env: {}, chdir: File.expand_path("../..", __dir__))
     root = File.expand_path("../..", __dir__)
-    Open3.capture3(env, RbConfig.ruby, "-Ilib", "exe/deckard", *args,
-      stdin_data: stdin.dup.force_encoding(Encoding::BINARY), chdir: root)
+    Open3.capture3(env, RbConfig.ruby, "-I#{root}/lib", "#{root}/exe/deckard", *args,
+      stdin_data: stdin.dup.force_encoding(Encoding::BINARY), chdir: chdir)
   end
 
   def fixture
@@ -31,6 +32,39 @@ RSpec.describe "deckard CLI" do
     expect(io.eof?).to be(true)
     expect(err).to include("dumped 2 total objects")
     expect(err).to include("CliWidget")
+  end
+
+  it "boots config/environment.rb from the working directory unless -r names another file" do
+    Dir.mktmpdir do |app|
+      Dir.mkdir(File.join(app, "config"))
+      File.write(File.join(app, "config/environment.rb"), "puts 'environment booted'\nrequire #{fixture.inspect}\n")
+
+      out, err, status = run_deckard("-d", "WIDGETS", chdir: app)
+
+      expect(status.exitstatus).to eq(0)
+      expect(err).to include("environment booted")
+      expect(err).to include("dumped 2 total objects")
+      io = StringIO.new(out)
+      expect(Marshal.load(io)).to eq(Deckard::STREAM_HEADER)
+
+      _, err, status = run_deckard("-r", fixture, "-d", "WIDGETS", chdir: app)
+
+      expect(status.exitstatus).to eq(0)
+      expect(err).not_to include("environment booted")
+      expect(err).to include("dumped 2 total objects")
+    end
+  end
+
+  it "requires nothing without -r or config/environment.rb, leaving a dump script to load its own" do
+    Tempfile.create(["dump_script", ".rb"]) do |script|
+      script.write("require #{fixture.inspect}\ndump WIDGETS\n")
+      script.flush
+
+      _, err, status = run_deckard("-d", script.path)
+
+      expect(status.exitstatus).to eq(0)
+      expect(err).to include("dumped 2 total objects")
+    end
   end
 
   it "eager loads the application and validates every plan before dumping" do

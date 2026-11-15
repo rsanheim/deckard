@@ -18,7 +18,7 @@ Its primary use case is copying production data into a local development databas
 remote_command="deckard -r /app/config/environment -d 'User.find(1234)'"
 
 ssh example.org "$remote_command" \
-  | deckard -r ./config/environment -l
+  | deckard -l
 ```
 
 Deckard is a direct resurrection of the original `replicate` gem’s operating model:
@@ -183,7 +183,7 @@ Deckard intentionally retains the original `-r`, `-d`, and `-l` interface.
 Evaluate a Ruby expression and dump the resulting object or objects to standard output:
 
 ```bash
-deckard -r ./config/environment -d "User.find(1)" > user.dump
+deckard -d "User.find(1)" > user.dump
 ```
 
 Diagnostic output goes to standard error:
@@ -211,11 +211,19 @@ There is no `--root` option: every object passed to `dump` is a root.
 
 ### 6.2 Requiring the application environment
 
-The `-r` option requires a Ruby file before evaluating or loading anything:
+Before evaluating or loading anything, Deckard requires `config/environment.rb` from the working directory when that file exists, so a command run from a Rails application's root needs no option:
 
 ```bash
-deckard -r ./config/environment -d "User.find(1)"
+deckard -d "User.find(1)"
 ```
+
+The `-r` option names the file to require instead, for a command run from another directory or an application that is not Rails:
+
+```bash
+deckard -r /app/config/environment -d "User.find(1)"
+```
+
+With neither, nothing is required, and a dump script loads what it needs (section 6.3).
 
 This normally boots Rails and loads the application’s model classes. Before a
 dump, Deckard eager loads the application (through Zeitwerk, when present) so
@@ -256,7 +264,7 @@ A script may call `dump` as many times as necessary. Command-line arguments
 after the options are left in `ARGV` for the script:
 
 ```bash
-deckard -r ./config/environment -d config/deckard/dump-repo.rb tilt
+deckard -d config/deckard/dump-repo.rb tilt
 ```
 
 `-d -` reads the script from standard input instead of a file.
@@ -268,7 +276,7 @@ A dump script is ordinary trusted Ruby. Deckard does not invent a separate confi
 Load a Deckard stream from standard input:
 
 ```bash
-deckard -r ./config/environment -l < repos.dump
+deckard -l < repos.dump
 ```
 
 Diagnostic output goes to standard error:
@@ -293,8 +301,8 @@ overrides it for the rare deliberate case.
 `--plan MODEL` prints the plan for dumps rooted at that model and exits:
 
 ```bash
-deckard -r ./config/environment --plan Order
-deckard -r ./config/environment --plan Order --format json
+deckard --plan Order
+deckard --plan Order --format json
 ```
 
 The plan is built as data (`ModelConfig#to_h`: the root entry first, then
@@ -326,7 +334,7 @@ The primary remote workflow remains a normal Unix pipeline:
 remote_command="deckard -r /app/config/environment -d 'User.find(1234)'"
 
 ssh example.org "$remote_command" \
-  | deckard -r ./config/environment -l
+  | deckard -l
 ```
 
 SSH is only the transport. Deckard does not manage SSH connections or know anything about the remote host.
@@ -336,9 +344,9 @@ SSH is only the transport. Deckard does not manage SSH connections or know anyth
 The required v1.0 CLI is deliberately small:
 
 ```text
-deckard -r FILE -d EXPRESSION_OR_FILE_OR_- [ARGS...]
-deckard -r FILE -l [--force]
-deckard -r FILE --plan MODEL [--format text|json]
+deckard [-r FILE] -d EXPRESSION_OR_FILE_OR_- [ARGS...]
+deckard [-r FILE] -l [--force]
+deckard [-r FILE] --plan MODEL [--format text|json]
 deckard --version
 deckard --help
 ```
@@ -462,7 +470,7 @@ end
 Dumping a user now includes its email addresses:
 
 ```bash
-deckard -r ./config/environment -d "User.find(1)" > user.dump
+deckard -d "User.find(1)" > user.dump
 ```
 
 `associations` is additive and may receive multiple names:
@@ -1236,7 +1244,7 @@ Deckard v1.0 is ready when the following work against ActiveRecord 8 and Postgre
 ### 18.1 Original-style expression dump
 
 ```bash
-deckard -r ./config/environment -d "User.find(1)" > user.dump
+deckard -d "User.find(1)" > user.dump
 ```
 
 produces a loadable stream.
@@ -1256,7 +1264,7 @@ can dump multiple records, relations, and collections.
 ```bash
 ssh example.org \
   "deckard -r /app/config/environment -d 'User.find(1234)'" \
-| deckard -r ./config/environment -l
+| deckard -l
 ```
 
 loads records without an intermediate file.

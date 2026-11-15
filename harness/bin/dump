@@ -3,4 +3,4 @@
 #
 #   bin/dump "Comment.all" > stream.dump
 set -euo pipefail
-exec bundle exec deckard -r ./config/environment -d "$1"
+exec bundle exec deckard -d "$1"

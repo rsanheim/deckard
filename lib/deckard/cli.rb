@@ -5,10 +5,10 @@ require_relative "plan_report"
 require_relative "status"
 
 module Deckard
-  # The deckard executable: -r requires the application environment, -d
-  # dumps a Ruby expression or dump script to stdout, -l loads a stream
-  # from stdin, --plan prints a root model's plan. Required from
-  # exe/deckard, not from the library itself.
+  # The deckard executable: boots the application in the working directory
+  # (or the file given to -r), -d dumps a Ruby expression or dump script to
+  # stdout, -l loads a stream from stdin, --plan prints a root model's plan.
+  # Required from exe/deckard, not from the library itself.
   class CLI
     # Evaluation context for dump scripts and -d expressions: exposes only
     # dump(object). Scripts see any extra command-line arguments in ARGV.
@@ -31,7 +31,11 @@ module Deckard
     def run(argv)
       options = parse(argv)
       reserve_stdout if options[:dump]
-      require File.expand_path(options[:require]) if options[:require]
+      if options[:require]
+        require File.expand_path(options[:require])
+      elsif File.exist?("config/environment.rb")
+        require File.expand_path("config/environment.rb")
+      end
 
       if options[:dump]
         dump(options[:dump])
@@ -69,14 +73,16 @@ module Deckard
         banner <<~BANNER
           deckard: stream ActiveRecord objects between Rails environments
 
-            dump:  deckard -r ./config/environment -d "User.find(1)" > user.dump
-            load:  deckard -r ./config/environment -l < user.dump
-            pipe:  ssh example.org "deckard -r /app/config/environment -d 'User.find(1)'" | deckard -r ./config/environment -l
-            plan:  deckard -r ./config/environment --plan User
+            dump:  deckard -d "User.find(1)" > user.dump
+            load:  deckard -l < user.dump
+            pipe:  ssh example.org "deckard -r /app/config/environment -d 'User.find(1)'" | deckard -l
+            plan:  deckard --plan User
+
+          Run from a Rails application's root, deckard loads config/environment.rb.
 
           Options:
         BANNER
-        opt :require, "Ruby file to require first (usually config/environment)", type: :string
+        opt :require, "Ruby file to require instead of config/environment.rb", type: :string
         opt :dump, "Dump the result of a Ruby expression, or run a dump script (a file, or - for stdin)", type: :string
         opt :load, "Load a deckard stream from standard input"
         opt :plan, "Print the plan for dumps rooted at MODEL", type: :string

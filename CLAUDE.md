@@ -88,14 +88,14 @@ operator would, through real apps and a real pipe.
 
 ## Architecture (from the spec)
 
-The operating model is a Unix pipeline: dump on the source (`deckard -r ./config/environment -d "User.find(1)"`),
-stream versioned Marshal frames over stdout, load on the destination (`deckard -r ./config/environment -l`)
+The operating model is a Unix pipeline: dump on the source (`deckard -d "User.find(1)"`),
+stream versioned Marshal frames over stdout, load on the destination (`deckard -l`)
 inside one transaction that commits only after a valid end marker. Foreign keys are rewritten via a
 source-to-destination ID map.
 
 Internal structure (spec section 16) — a few small classes, no adapter frameworks or registries:
 
-- `Deckard::CLI` — parse `-r`/`-d`/`-l`/`--plan`, reserve stdout for the stream, boot the app, wire stdin/stdout
+- `Deckard::CLI` — parse `-r`/`-d`/`-l`/`--plan`, reserve stdout for the stream, boot the app (`config/environment.rb` in the working directory, or the `-r` file), wire stdin/stdout
 - `Deckard::Dumper` — dedupe by `[type, source_id]`, call `dump_replicant`, write frames
 - `Deckard::Loader` — read frames incrementally, resolve `[:id, "User", 1234]` reference tuples, call `load_replicant`, manage the transaction
 - `Deckard::ModelConfig` — a root model's plan, backing the `replicate do ... end` DSL: what a dump carries and how each reached class is matched (`docs/traversal.md`)

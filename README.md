@@ -42,11 +42,14 @@ end
 ```
 
 From your development machine, dump on the remote side and load locally in
-one pipe. SSH is the transport; nothing lands on disk:
+one pipe. SSH is the transport; nothing lands on disk. Run from a Rails
+application's root, `deckard` loads `config/environment.rb` itself; `-r FILE`
+names the file to require from anywhere else, or for an application that is
+not Rails:
 
 ```bash
 ssh prod.example.org "deckard -r /app/config/environment -d 'Order.find(1234)'" \
-  | deckard -r ./config/environment -l
+  | deckard -l
 ```
 
 Standard error on each end reports what moved:
@@ -66,8 +69,8 @@ rather than duplicated. Everything else is a new row with a new id.
 To keep a dump around, write it to a file and load it later:
 
 ```bash
-deckard -r ./config/environment -d "Order.find(1234)" > order.dump
-deckard -r ./config/environment -l < order.dump
+deckard -d "Order.find(1234)" > order.dump
+deckard -l < order.dump
 ```
 
 ## What a dump carries
@@ -131,8 +134,8 @@ before any record is dumped. Loading consults no plan at all.
 To see a plan before pointing it at production, print it:
 
 ```bash
-deckard -r ./config/environment --plan Order
-deckard -r ./config/environment --plan Order --format json
+deckard --plan Order
+deckard --plan Order --format json
 ```
 
 ```text
@@ -167,7 +170,7 @@ dump repo.issues
 ```
 
 ```bash
-deckard -r ./config/environment -d config/deckard/dump-repo.rb tilt > repos.dump
+deckard -d config/deckard/dump-repo.rb tilt > repos.dump
 ```
 
 Extra command-line arguments reach the script through `ARGV`, and `-d -`
