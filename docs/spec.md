@@ -217,13 +217,16 @@ Before evaluating or loading anything, Deckard requires `config/environment.rb` 
 deckard -d "User.find(1)"
 ```
 
-The `-r` option names the file to require instead, for a command run from another directory or an application that is not Rails:
+Use `-r FILE` to boot from another directory or to load a custom boot file:
 
 ```bash
 deckard -r /app/config/environment -d "User.find(1)"
 ```
 
-With neither, nothing is required, and a dump script loads what it needs (section 6.3).
+With neither, Deckard evaluates the dump without requiring an environment. A
+dump script can load its own dependencies (section 6.3). If a dump expression
+encounters an undefined name, Deckard points the operator to the environment
+file or `-r FILE`.
 
 This normally boots Rails and loads the application’s model classes. Before a
 dump, Deckard eager loads the application (through Zeitwerk, when present) so
@@ -251,7 +254,7 @@ end
 Run it with the same `-d` option:
 
 ```bash
-deckard -r ./config/environment -d config/deckard/dump-stuff.rb > repos.dump
+deckard -d config/deckard/dump-stuff.rb > repos.dump
 ```
 
 When the argument to `-d` resolves to a file, Deckard evaluates that file in a small context exposing:

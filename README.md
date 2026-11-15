@@ -44,8 +44,7 @@ end
 From your development machine, dump on the remote side and load locally in
 one pipe. SSH is the transport; nothing lands on disk. Run from a Rails
 application's root, `deckard` loads `config/environment.rb` itself; `-r FILE`
-names the file to require from anywhere else, or for an application that is
-not Rails:
+names the file to require when using another directory or a custom boot file:
 
 ```bash
 ssh prod.example.org "deckard -r /app/config/environment -d 'Order.find(1234)'" \

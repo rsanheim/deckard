@@ -67,6 +67,19 @@ RSpec.describe "deckard CLI" do
     end
   end
 
+  it "says no environment was loaded when an expression dump has neither -r nor config/environment.rb" do
+    Dir.mktmpdir do |empty|
+      out, err, status = run_deckard("-d", "WIDGETS", chdir: empty)
+
+      expect(status.exitstatus).to eq(1)
+      expect(out).to be_empty
+      expect(err).to include("WIDGETS")
+      expect(err).to include("config/environment.rb")
+      expect(err).to include("-r")
+      expect(err).not_to include("(NameError)")
+    end
+  end
+
   it "eager loads the application and validates every plan before dumping" do
     _, err, status = run_deckard("-r", fixture, "-d", "WIDGETS")
     expect(status.exitstatus).to eq(0)
