@@ -84,7 +84,7 @@ By default, every newly replicated ActiveRecord row receives a primary key gener
 
 Source primary keys are used only to identify objects within the stream. They are not inserted into destination primary-key columns.
 
-Deckard leaves the primary key out of an insert when the destination column is auto-populated: a serial or identity column, or one with a function default such as `gen_random_uuid()`. Any other primary key is inserted as it arrives, after reference resolution, so a key the application assigns keeps the source's value and a key that is also a foreign key takes the parent's destination ID.
+Deckard does not sync [auto-populated primary keys](https://github.com/rails/rails/blob/v8.1.3.1/activerecord/lib/active_record/connection_adapters/column.rb#L79) to the destination database, as that would conflict with the destination database's own primary keys. Other primary keys are synced like any other field.
 
 Given:
 

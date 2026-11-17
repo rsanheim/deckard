@@ -25,9 +25,7 @@ module Deckard
       # `because` says what led to the insert when it was not the only path,
       # so a failure names the match key that matched nothing.
       def insert(because = "")
-        # The database fills in an auto-populated primary key. Any other is
-        # inserted as it arrived: the source's value, or the destination ID
-        # of the parent it references.
+        # An auto-populated primary key is left to the destination database.
         auto_populated = @model.columns_hash[@model.primary_key].auto_populated?
         attributes = auto_populated ? @attributes.except(@model.primary_key) : @attributes
         result = @model.insert_all!([attributes], returning: [@model.primary_key])
