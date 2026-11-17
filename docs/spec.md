@@ -1308,7 +1308,7 @@ loaded through the executable.
 
 ### 18.7 ID remapping
 
-Source primary keys are replaced with destination-generated keys, and every supported foreign key points at the correct destination row.
+Deckard does not insert a source row's auto-populated primary key; the destination database assigns its own, and every related foreign key Deckard is tracking is remapped to the actual generated primary key.
 
 ### 18.8 Shared dependencies
 
