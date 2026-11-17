@@ -57,7 +57,7 @@ In particular, Deckard v1.0 will not introduce:
 - `deckard dump` and `deckard load` subcommands.
 - A `--root` option.
 - CLI association paths.
-- Named plans selected from the CLI.
+- Named plans beyond a model's `replicate` block.
 - Presets.
 - A global Deckard configuration DSL.
 - A second API for operations already supported by `dump`.
@@ -256,7 +256,7 @@ A script may call `dump` as many times as necessary. Command-line arguments
 after the options are left in `ARGV` for the script:
 
 ```bash
-deckard -r ./config/environment -d config/deckard/dump-repo.rb rtomayko/tilt
+deckard -r ./config/environment -d config/deckard/dump-repo.rb tilt
 ```
 
 `-d -` reads the script from standard input instead of a file.
@@ -698,7 +698,7 @@ Arrays and other enumerables supplied by application code are iterated normally.
 
 ### 8.3 Repeated dumps
 
-Calling `dump` on an object that has already been emitted does not emit it again. A record first written as a dependency is still walked when it is later reached as a root or owned record.
+Calling `dump` on an object that has already been emitted does not emit it again. A record first written as a dependency still has its owned associations followed when it is later reached as a root or owned record.
 
 The root's plan on the first traversal determines which of that object’s associations are followed during that traversal.
 
@@ -1041,7 +1041,7 @@ The following are explicitly not required for v1.0:
 - Search-index updates.
 - Redis or other external-store synchronization, except through an explicit application override.
 
-These cases are not part of the v1.0 contract. HABTM and `has_many :through` associations named in a plan are rejected (section 7.5); the rest may work accidentally in simple forms.
+These cases are not part of the v1.0 contract. Some raise errors (section 18.16); others may work accidentally in simple forms.
 
 ## 14. Errors
 
