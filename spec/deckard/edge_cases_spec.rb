@@ -31,7 +31,7 @@ RSpec.describe "ActiveRecord edge cases", :db do
     expect(new_variant.attachment_id).to eq(new_attachment.id)
   end
 
-  it "keeps a primary key the destination database cannot generate" do
+  it "syncs a primary key that is not auto-populated" do
     author = create_author("rachael")
     license = License.create!(id: "CC-BY-4.0", name: "Creative Commons Attribution 4.0")
     Post.create!(author: author, license: license, title: "Esper photograph")

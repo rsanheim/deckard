@@ -1237,7 +1237,7 @@ Deckard v1.0 must maintain these invariants:
 1. A source object is emitted no more than once.
 2. An emitted object is identified by its type and source ID.
 3. A referenced object appears before the object that references it.
-4. A source primary key is not inserted as the primary key of a newly created destination record, unless the destination database cannot generate that key.
+4. An auto-populated source primary key is not inserted as the primary key of a newly created destination record.
 5. Every loaded object produces a source-to-destination ID mapping.
 6. Every reference tuple resolves through that mapping.
 7. Multiple references to one source object resolve to one destination object.

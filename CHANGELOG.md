@@ -17,10 +17,8 @@ change the stream format and the Ruby API.
 
 ### Fixed
 
-- Load rows whose primary key the destination database cannot generate (no
-  default, sequence, or identity), such as an application-assigned string
-  key or a primary key that is also a foreign key. The key is inserted as it
-  arrives; dropping it failed the insert with a `NotNullViolation`.
+- Sync a primary key that is not auto-populated like any other field.
+  Deckard dropped every primary key, so loading such a row failed.
 
 ## [0.3.1] - 2026-10-10
 
