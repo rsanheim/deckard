@@ -692,7 +692,7 @@ If several orders reference the same customer, that customer is written once. Ev
 
 ActiveRecord relations and collection associations should be iterated in batches where practical.
 
-Deckard loads a plain planned `has_many` for a batch of sibling records with one query, and any other planned collection with one query per record.
+Deckard queries a plain planned `has_many`, one with no scope or options beyond its class and foreign key, once for a batch of sibling records. It queries any other planned collection once per record.
 
 Deckard must not convert an entire relation into an array merely to begin dumping it.
 
