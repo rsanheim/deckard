@@ -1,6 +1,6 @@
 # Deckard v1.0 Specification
 
-**Status:** Current for 0.2.0. Sections 19 to 21 record the implementation plan and deferrals.  
+**Status:** Current for main. Sections 19 to 21 record the implementation plan and deferrals.  
 **Gem:** `deckard`  
 **Executable:** `deckard`  
 **Ruby namespace:** `Deckard`  
@@ -57,7 +57,7 @@ In particular, Deckard v1.0 will not introduce:
 - `deckard dump` and `deckard load` subcommands.
 - A `--root` option.
 - CLI association paths.
-- Named extraction plans.
+- Named plans beyond a model's `replicate` block.
 - Presets.
 - A global Deckard configuration DSL.
 - A second API for operations already supported by `dump`.
@@ -207,7 +207,7 @@ Deckard automatically calls `dump` on the expression result. The expression
 is evaluated in the same context as a dump script (section 6.3), so it may
 also call `dump` itself.
 
-There is no `--root` concept or option.
+There is no `--root` option: every object passed to `dump` is a root.
 
 ### 6.2 Requiring the application environment
 
@@ -231,8 +231,6 @@ For more involved selection, use a normal Ruby file:
 ```ruby
 # config/deckard/dump-stuff.rb
 
-require "./config/environment"
-
 %w[rtomayko/tilt rtomayko/bcat].each do |repo_name|
   repo = Repository.find_by_name_with_owner(repo_name)
 
@@ -245,7 +243,7 @@ end
 Run it with the same `-d` option:
 
 ```bash
-deckard -d config/deckard/dump-stuff.rb > repos.dump
+deckard -r ./config/environment -d config/deckard/dump-stuff.rb > repos.dump
 ```
 
 When the argument to `-d` resolves to a file, Deckard evaluates that file in a small context exposing:
@@ -258,7 +256,7 @@ A script may call `dump` as many times as necessary. Command-line arguments
 after the options are left in `ARGV` for the script:
 
 ```bash
-deckard -r ./config/environment -d config/deckard/dump-repo.rb rtomayko/tilt
+deckard -r ./config/environment -d config/deckard/dump-repo.rb tilt
 ```
 
 `-d -` reads the script from standard input instead of a file.
@@ -287,7 +285,7 @@ User             89
 
 Loading refuses to run when the application environment is production, as
 reported by `Rails.env` or, without Rails, `RAILS_ENV` or `RACK_ENV`. The
-refusal is a `LoadError` raised before any frame is read. `--force`
+refusal is a `Deckard::LoadError` raised before any frame is read. `--force`
 overrides it for the rare deliberate case.
 
 ### 6.5 Printing a plan
@@ -700,7 +698,7 @@ Arrays and other enumerables supplied by application code are iterated normally.
 
 ### 8.3 Repeated dumps
 
-Calling `dump` on an object that has already been emitted does not emit it again.
+Calling `dump` on an object that has already been emitted does not emit it again. A record first written as a dependency still has its owned associations followed when it is later reached as a root or owned record.
 
 The root's plan on the first traversal determines which of that object’s associations are followed during that traversal.
 
@@ -743,14 +741,14 @@ A stream contains:
 Conceptually:
 
 ```ruby
-Marshal.dump([:deckard, 1], output)
+Marshal.dump([:deckard, 2], output)
 
 Marshal.dump(
   ["User", 1234, { "name" => "Rob" }, ["login"]],
   output
 )
 
-Marshal.dump([:deckard_end, 1], output)
+Marshal.dump([:deckard_end, 2], output)
 ```
 
 The exact internal constants may differ, but the protocol must be explicitly versioned.
@@ -831,7 +829,7 @@ Deckard is an internal operator tool, not a public import format or network serv
 ActiveRecord classes provide the default class method:
 
 ```ruby
-load_replicant(type, source_id, attributes)
+load_replicant(type, source_id, attributes, match_key)
 ```
 
 It returns:
@@ -843,7 +841,7 @@ It returns:
 The default implementation:
 
 1. Receives attributes after all reference tuples have been resolved.
-2. Looks up an existing record when the model has a match key.
+2. Looks up an existing record when the record arrives with a match key.
 3. Otherwise prepares a new record.
 4. Writes attributes without validations or callbacks.
 5. Allows PostgreSQL to assign a new primary key for new records.
@@ -1021,7 +1019,7 @@ Deckard v1.0 targets ordinary Rails models with:
 - Conventional polymorphic `belongs_to`.
 - Conventional `has_one`.
 - Explicitly selected conventional `has_many`.
-- Explicitly selected reverse polymorphic `has_one` and `has_many`.
+- Reverse polymorphic `has_one`, and explicitly selected reverse polymorphic `has_many`.
 - Normal `class_name` and `foreign_key` association options.
 - Attributes serializable by Ruby `Marshal` and writable through ActiveRecord.
 
@@ -1031,7 +1029,7 @@ The following are explicitly not required for v1.0:
 - HABTM join-table replication.
 - `has_many :through`.
 - `has_one :through`.
-- Associations targeting non-primary unique keys.
+- Associations targeting non-primary unique keys, beyond the `belongs_to` case in section 9.3.
 - Complicated STI dispatch.
 - Cross-database associations.
 - Models without a usable primary key.
@@ -1043,7 +1041,7 @@ The following are explicitly not required for v1.0:
 - Search-index updates.
 - Redis or other external-store synchronization, except through an explicit application override.
 
-These cases may work accidentally in simple forms, but they are not part of the v1.0 contract.
+These cases are not part of the v1.0 contract. Some raise errors (section 18.16); others may work accidentally in simple forms.
 
 ## 14. Errors
 
@@ -1051,13 +1049,13 @@ Deckard should use a small error hierarchy:
 
 ```ruby
 Deckard::Error
-Deckard::ConfigurationError
-Deckard::DumpError
-Deckard::OutputError
-Deckard::LoadError
-Deckard::UnresolvedReference
-Deckard::InvalidStream
-Deckard::InsertError
+  Deckard::ConfigurationError
+  Deckard::DumpError
+    Deckard::OutputError
+  Deckard::LoadError
+    Deckard::UnresolvedReference
+    Deckard::InvalidStream
+    Deckard::InsertError
 ```
 
 Errors should include enough context to identify the problem:
@@ -1126,7 +1124,7 @@ User             89
 ```
 
 Application output that would otherwise reach stdout is redirected to stderr
-(section 6.5). The default output should remain useful in an SSH pipeline
+(section 6.6). The default output should remain useful in an SSH pipeline
 without becoming a logging subsystem.
 
 ## 16. Proposed internal structure
@@ -1299,8 +1297,8 @@ dumps each line item's adjustments whether `LineItem` loads before or after
 `Order`; `dump LineItem.first` follows LineItem's own block, not Order's; a
 product reached from a line item arrives as a row without the collections
 its own entry names; and a plan naming a missing class, association, or
-attribute fails with `ConfigurationError` before any record is dumped or
-loaded through the executable.
+attribute fails with `ConfigurationError` before any record is dumped through
+the executable.
 
 ### 18.7 ID remapping
 
@@ -1365,7 +1363,7 @@ A malformed stream, truncated stream, unresolved reference, or PostgreSQL insert
 
 ### 18.16 Clear unsupported-case errors
 
-HABTM associations, through associations, composite primary keys, and unsupported dependency cycles produce specific errors rather than corrupted data.
+HABTM associations, `has_many :through` associations, composite primary keys, and unsupported dependency cycles produce specific errors rather than corrupted data.
 
 ### 18.17 Boot-log-safe output
 
