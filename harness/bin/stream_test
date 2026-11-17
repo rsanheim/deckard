@@ -19,7 +19,9 @@ docker compose exec -T app_dest bin/rails db:drop db:create db:migrate
 docker compose exec -T app_dest bin/rails runner script/reset_dest_sequences.rb
 
 echo "==> streaming source -> destination"
-docker compose exec -T -e DECKARD_HARNESS_BOOT_LOG=1 app_source bin/dump "Comment.all" \
+# Authors are reached only through belongs_to, which carries nothing they
+# own, so profiles are dumped as roots of their own.
+docker compose exec -T -e DECKARD_HARNESS_BOOT_LOG=1 app_source bin/dump "[Comment.all, Profile.all]" \
   | docker compose exec -T app_dest bin/load
 
 echo "==> verifying destination"

@@ -56,7 +56,7 @@ RSpec.describe Deckard::ActiveRecord, :db do
     io, dumper = stream(comment)
     expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Comment" => 1)
 
-    # Loading into the same database: the author's natural key would match
+    # Loading into the same database: the author's match key would match
     # the source row, so change it and force a fresh insert.
     author.update_columns(username: "rachael-source")
     Deckard::Loader.new(io).load

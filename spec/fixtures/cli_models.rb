@@ -27,7 +27,7 @@ class CliWidget
     dumper.write(self.class, id, {"name" => name})
   end
 
-  def self.load_replicant(type, source_id, attributes, natural_key)
+  def self.load_replicant(type, source_id, attributes, match_key)
     File.open(ENV.fetch("DECKARD_CLI_OUT"), "a") do |file|
       file.puts JSON.generate("type" => type, "source_id" => source_id, "attributes" => attributes)
     end

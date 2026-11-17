@@ -41,7 +41,7 @@ fail if a missing child were somehow dumped, but no test targets the absent-chil
 name.
 
 We do not test loading a has_one child into a destination that already has one. No
-has_one target model has a `natural_key`, so the update-an-existing-row path is only ever
+has_one target model has a `match_by`, so the update-an-existing-row path is only ever
 tested through `Reader`/`ReaderEmail` (`model_api_spec.rb:110-128`), which are reached
 via a has_many. It is the same loader code either way, but the has_one shape itself is
 untested.
@@ -174,13 +174,13 @@ cycle (`active_record_spec.rb:124-130`).
 ### Idempotency — Partial
 
 Dumping the same object twice in one script emits it once (`stream_spec.rb:122-133`).
-Natural-key models update the existing destination row instead of duplicating
-(`model_api_spec.rb:110-128`) and an ambiguous natural key fails the load
+Match-key models update the existing destination row instead of duplicating
+(`model_api_spec.rb:110-128`) and an ambiguous match key fails the load
 (`model_api_spec.rb:140-150`).
 
-We do not test loading the same stream twice. Verified by running: without a natural
+We do not test loading the same stream twice. Verified by running: without a match
 key, a second load inserts a second copy of every row. That matches spec section 10.3 —
-deckard never updates or deletes existing rows unless a natural key says to — so it is
+deckard never updates or deletes existing rows unless a match key says to — so it is
 correct behavior, but no test asserts it.
 
 ### Stream ordering — Partial
@@ -195,7 +195,7 @@ has its own test (`stream_spec.rb:166-177`).
 The harness graph (Author/Profile/Post/Comment, dumped via `Comment.all`) exercises
 belongs_to chains, has_one, shared authors, the sequence-divergence id proof, encryption
 re-keying, a PG enum, and a generated column. It does not exercise UUID keys,
-self-reference, diamonds, cycles, or natural keys — by design, those live in the
+self-reference, diamonds, cycles, or match keys — by design, those live in the
 gem-spec tier.
 
 ## Proposed follow-ups (for review — none done)
@@ -204,8 +204,8 @@ In-contract gaps — behavior verified correct, each needs a small regression te
 
 - [ ] Zero-dependents record: dump a bare record, assert `counts == {"Type"=>1}` and a clean load
 - [ ] Zero-children opted-in has_many (a library with no books)
-- [ ] Double-load of a non-natural-key stream: assert the duplicate-rows behavior (spec 10.3)
-- [ ] has_one target with a natural key: pre-seed a destination child, assert it is updated in place rather than duplicated
+- [ ] Double-load of a non-match-key stream: assert the duplicate-rows behavior (spec 10.3)
+- [ ] has_one target with a match key: pre-seed a destination child, assert it is updated in place rather than duplicated
 - [ ] Classic two-arm diamond, named as such, asserting single emission of the shared grandchild
 - [ ] Same ActiveRecord collection dumped twice in one script emits rows once
 - [ ] Self-loop row: pin the verified `DumpError` behavior with a test (or decide to support it and change code)

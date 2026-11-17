@@ -5,7 +5,7 @@ require "active_record"
 # The forum models behind the gem's ActiveRecord specs, backed by the schema
 # in spec/db/schema.rb. Defining them touches no database. Each replicate
 # block is the whole plan for dumps rooted at that model; plans that only
-# name Author's natural key exist so round-trip specs, which load back into
+# name Author's match key exist so round-trip specs, which load back into
 # the source database, reuse authors instead of violating the username index.
 
 class Author < ActiveRecord::Base
@@ -40,9 +40,9 @@ class Author < ActiveRecord::Base
   # it later. There is no Reaction entry, so a reaction's target is followed
   # here even though Reaction's own plan omits it.
   replicate do
-    natural_key :username
+    match_by :username
     associations :reactions, :posts, :author_emails, :donations, :attachments
-    natural_keys "Profile" => :author_id, "AuthorEmail" => [:author_id, :address], "Category" => :slug
+    match_each_model_by "Profile" => :author_id, "AuthorEmail" => [:author_id, :address], "Category" => :slug
     model "Post" do
       associations :comments
     end
@@ -63,8 +63,8 @@ class AuthorEmail < ActiveRecord::Base
   belongs_to :author
 
   replicate do
-    natural_key :author_id, :address
-    natural_keys "Author" => :username
+    match_by :author_id, :address
+    match_each_model_by "Author" => :username
   end
 end
 
@@ -72,7 +72,7 @@ class Category < ActiveRecord::Base
   has_many :posts
 
   replicate do
-    natural_key :slug
+    match_by :slug
     omit_fields :moderator_notes
   end
 end
@@ -84,7 +84,7 @@ class License < ActiveRecord::Base
   has_many :posts
 
   replicate do
-    natural_key :id
+    match_by :id
   end
 end
 
@@ -94,10 +94,10 @@ class MisconfiguredCategory < ActiveRecord::Base
 
   replicate do
     associations :moderators
-    natural_key :handle
-    natural_keys "Moderator" => :login, "Post" => :title
+    match_by :handle
+    match_each_model_by "Moderator" => :login, "Post" => :title
     model "Post" do
-      natural_key :title
+      match_by :title
       associations :tags
     end
   end
@@ -110,7 +110,7 @@ class Visitor < ActiveRecord::Base
   self.table_name = "authors"
 
   replicate do
-    natural_key :username
+    match_by :username
     omit_fields :name
   end
 end
@@ -153,7 +153,7 @@ class Post < ActiveRecord::Base
   # carries moderator_notes while a category dump omits them.
   replicate do
     associations :comments
-    natural_keys "Author" => :username, "Category" => :slug
+    match_each_model_by "Author" => :username, "Category" => :slug
     model "Comment" do
       associations :replies, :mentions
     end
@@ -172,7 +172,7 @@ class Comment < ActiveRecord::Base
   has_many :mentions
 
   replicate do
-    natural_keys "Author" => :username
+    match_each_model_by "Author" => :username
   end
 end
 
@@ -180,7 +180,7 @@ class Tag < ActiveRecord::Base
   has_many :post_tags
 
   replicate do
-    natural_key :name
+    match_by :name
   end
 end
 
@@ -191,7 +191,7 @@ class PostTag < ActiveRecord::Base
   # The tag is left behind: its foreign key travels as-is.
   replicate do
     omit_associations :tag
-    natural_keys "Author" => :username
+    match_each_model_by "Author" => :username
   end
 end
 
@@ -202,7 +202,7 @@ class Reaction < ActiveRecord::Base
   # The target is left behind: its polymorphic foreign key travels as-is.
   replicate do
     omit_associations :reactable
-    natural_keys "Author" => :username
+    match_each_model_by "Author" => :username
   end
 end
 
@@ -213,7 +213,7 @@ class Mention < ActiveRecord::Base
   belongs_to :author, primary_key: :username, foreign_key: :mentioned_username
 
   replicate do
-    natural_keys "Author" => :username
+    match_each_model_by "Author" => :username
   end
 end
 
@@ -224,7 +224,7 @@ class Attachment < ActiveRecord::Base
 
   replicate do
     associations :variants
-    natural_keys "Author" => :username
+    match_each_model_by "Author" => :username
   end
 end
 
@@ -232,7 +232,7 @@ class AttachmentVariant < ActiveRecord::Base
   belongs_to :attachment
 
   replicate do
-    natural_keys "Author" => :username
+    match_each_model_by "Author" => :username
   end
 end
 
@@ -243,7 +243,7 @@ class Donation < ActiveRecord::Base
   # The post travels, but the donation's link to it does not.
   replicate do
     omit_fields :post_id
-    natural_keys "Author" => :username
+    match_each_model_by "Author" => :username
   end
 end
 

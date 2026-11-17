@@ -44,7 +44,7 @@ RSpec.describe "ActiveRecord edge cases", :db do
     expect(Post.sole.license).to eq(License.sole)
   end
 
-  it "updates the existing row when such a primary key is the natural key" do
+  it "updates the existing row when such a primary key is the match key" do
     license = License.create!(id: "CC-BY-4.0", name: "Creative Commons Attribution 4.0")
 
     io, _ = stream(license)

@@ -47,7 +47,7 @@ An original example should generally translate to Deckard by making only these c
 | `require "replicate"` | `require "deckard"` |
 | `replicate ...` executable | `deckard ...` executable |
 | `replicate_associations` | `replicate { associations ... }` |
-| `replicate_natural_key` | `replicate { natural_key ... }` |
+| `replicate_natural_key` | `replicate { match_by ... }` |
 | `replicate_omit_attributes` | `replicate { omit_fields ... }` |
 
 Everything else should remain conceptually and syntactically close to the original.
@@ -84,7 +84,7 @@ By default, every newly replicated ActiveRecord row receives a primary key gener
 
 Source primary keys are used only to identify objects within the stream. They are not inserted into destination primary-key columns.
 
-The exception is a primary key the destination database cannot generate: a column with no default, sequence, or identity, such as an application-assigned string key or a key that is also a foreign key. That value is inserted as it arrives, after reference resolution, so an application-assigned key keeps the source's value and a foreign-key primary key takes the parent's destination ID.
+The exception is a primary key the destination database cannot generate: a column with no default, sequence, or identity, such as a natural key the application assigns or a key that is also a foreign key. That value is inserted as it arrives, after reference resolution, so an application-assigned key keeps the source's value and a foreign-key primary key takes the parent's destination ID.
 
 Given:
 
@@ -133,7 +133,7 @@ The object stream itself must not be a sequence of PostgreSQL SQL statements. Th
 The original README’s small configuration surface remains available:
 
 - Additional associations.
-- Natural keys.
+- Match keys.
 - Explicit field omissions and association omissions.
 - `dump_replicant` and `load_replicant` hooks.
 
@@ -159,7 +159,7 @@ Deckard v1.0 does not include:
 - Nested association configuration syntax.
 - Custom transformation pipelines.
 - A public database-adapter framework.
-- Primary-key preservation.
+- Preserving primary keys the database generates.
 - Automatic matching based on every unique index.
 - Support for every ActiveRecord association variation.
 - Support for every PostgreSQL type or schema feature.
@@ -236,7 +236,7 @@ This normally boots Rails and loads the application’s model classes. Before a
 dump, Deckard eager loads the application (through Zeitwerk, when present) so
 every model’s `replicate` block has run, and validates every plan (section
 7.5) before any record is written. A load consults no plan: each record
-arrives with its natural key (section 9.2), so the destination's `replicate`
+arrives with its match key (section 9.2), so the destination's `replicate`
 blocks are neither loaded nor checked.
 
 ### 6.3 Dump scripts
@@ -315,7 +315,7 @@ deckard -r ./config/environment --plan Order --format json
 ```
 
 The plan is built as data (`ModelConfig#to_h`: the root entry first, then
-each `model` entry, each with its associations, natural key, omitted fields
+each `model` entry, each with its associations, match key, omitted fields
 and omitted associations) and rendered separately, as text for people or
 JSON for tools. The application is eager loaded first, and only the requested
 plan is validated; a model without a `replicate` block, or a plan with a
@@ -390,7 +390,7 @@ class Order < ActiveRecord::Base
     end
 
     model "Customer" do
-      natural_key :email
+      match_by :email
       omit_fields :password_digest
     end
   end
@@ -401,23 +401,23 @@ The block provides six methods in v1.0:
 
 ```ruby
 associations
-natural_key
-natural_keys
+match_by
+match_each_model_by
 omit_fields
 omit_associations
 model
 ```
 
 `model` takes a class name and a block offering `associations`,
-`natural_key`, `omit_fields`, and `omit_associations` for a class the dump
-reaches. `natural_keys` takes one table of class name to attribute name or
+`match_by`, `omit_fields`, and `omit_associations` for a class the dump
+reaches. `match_each_model_by` takes one table of class name to attribute name or
 names and is the short form for the common case, an entry that only says how
 a class is matched:
 
 ```ruby
 replicate do
   associations :line_items
-  natural_keys "Customer" => :email, "Product" => :sku, "Warehouse" => [:region, :code]
+  match_each_model_by "Customer" => :email, "Product" => :sku, "Warehouse" => [:region, :code]
 
   model "Customer" do
     omit_fields :password_digest
@@ -425,8 +425,8 @@ replicate do
 end
 ```
 
-A plan gives each class one natural key. Declaring it twice, in
-`natural_keys` and again in that class's `model` block, is a plan problem
+A plan gives each class one match key. Declaring it twice, in
+`match_each_model_by` and again in that class's `model` block, is a plan problem
 (section 7.5), never a quiet override. A dump
 follows its root's plan and nothing else: `dump Order` uses Order's block for
 every record it reaches, and `dump LineItem` uses LineItem's. A reached
@@ -447,7 +447,7 @@ ownership tree instead of the connected component of the database. The same
 record dumped as a dependency first and as a root or owned record later is
 written once and then walked. See `docs/traversal.md`.
 
-Natural keys travel with the records: each replicant in the stream carries
+Match keys travel with the records: each replicant in the stream carries
 the attributes its plan matches it by (section 9.2), so the destination needs
 no plan of its own and the source's plan drives the load.
 
@@ -525,11 +525,11 @@ dump repo.issues
 dump repo.issues.flat_map(&:comments)
 ```
 
-### 7.2 Natural keys
+### 7.2 Match keys
 
 By default, the loader creates a new destination record and assigns it a new destination primary key.
 
-A plan can define a natural key when existing destination records should be reused:
+A plan can define a match key when existing destination records should be reused:
 
 ```ruby
 class User < ActiveRecord::Base
@@ -537,25 +537,25 @@ class User < ActiveRecord::Base
   has_many :email_addresses
 
   replicate do
-    natural_key :login
+    match_by :login
     associations :email_addresses
 
     model "EmailAddress" do
-      natural_key :user_id, :email
+      match_by :user_id, :email
     end
   end
 end
 ```
 
-A natural key may contain one or more attributes.
+A match key may contain one or more attributes.
 
-The key travels with each record in the stream. When loading a record with a natural key, Deckard:
+The key travels with each record in the stream. When loading a record with a match key, Deckard:
 
-1. Resolves any replicated foreign-key references in the natural key.
-2. Looks for an existing destination record matching all natural-key attributes.
+1. Resolves any replicated foreign-key references in the match key.
+2. Looks for an existing destination record matching all match-key attributes.
 3. Updates that record if exactly one match exists.
 4. Creates a new record with a new destination primary key if no match exists.
-   If that insert fails, the error names the natural key that matched nothing,
+   If that insert fails, the error names the match key that matched nothing,
    since a row the plan expected to find is the usual cause.
 5. Fails if the lookup is ambiguous.
 
@@ -568,7 +568,7 @@ Source User id=100, login="rob"
 Destination User id=8, login="rob"
 ```
 
-With `natural_key :login`, Deckard maps:
+With `match_by :login`, Deckard maps:
 
 ```text
 ["User", 100] => 8
@@ -576,7 +576,7 @@ With `natural_key :login`, Deckard maps:
 
 Dependent records are then rewritten to reference destination user `8`.
 
-Natural keys are explicit. Deckard does not inspect all unique indexes and guess which ones should identify shared records.
+Match keys are explicit. Deckard does not inspect all unique indexes and guess which ones should identify shared records.
 
 ### 7.3 Omitting fields
 
@@ -642,10 +642,10 @@ does not silently remove or rewrite fields.
 
 Plans are validated before a stream starts. The `deckard` executable eager
 loads the application after requiring it, so every `replicate` block has run,
-then checks every plan: each class named by `model` or `natural_keys` must
+then checks every plan: each class named by `model` or `match_each_model_by` must
 be a loaded ActiveRecord model, each configured association must exist and
-be of a supported kind, each natural-key or omitted attribute must exist,
-and no class is given a natural key more than once in the same plan.
+be of a supported kind, each match-key or omitted attribute must exist,
+and no class is given a match key more than once in the same plan.
 Validation reports every problem at once as a `ConfigurationError` before any
 record is dumped. Dumping through the Ruby API checks each entry when the
 first record of its class is dumped. A load validates nothing: it needs no
@@ -777,7 +777,7 @@ A dump produced by the old `replicate` gem is not required to load in Deckard.
 Every dumped object is represented by:
 
 ```ruby
-[type, source_id, attributes, natural_key]
+[type, source_id, attributes, match_key]
 ```
 
 Where:
@@ -785,7 +785,7 @@ Where:
 - `type` is a class-name string.
 - `source_id` identifies the object in the source environment.
 - `attributes` is a hash with string keys and serializable Ruby values.
-- `natural_key` is the array of attribute names the destination matches an
+- `match_key` is the array of attribute names the destination matches an
   existing record by, empty when the record is always inserted.
 
 The combination of `type` and `source_id` must be unique within the stream.
@@ -858,10 +858,10 @@ It returns:
 The default implementation:
 
 1. Receives attributes after all reference tuples have been resolved.
-2. Looks up an existing record when the model has a natural key.
+2. Looks up an existing record when the model has a match key.
 3. Otherwise prepares a new record.
 4. Writes attributes without validations or callbacks.
-5. Allows PostgreSQL to assign a new primary key for new records.
+5. Allows PostgreSQL to assign a new primary key for new records, when it generates that key.
 6. Returns the destination ID and loaded object.
 
 ### 10.1 New records
@@ -871,7 +871,7 @@ New records should be inserted through a current ActiveRecord API that:
 - Bypasses validations.
 - Bypasses callbacks.
 - Applies ActiveRecord type serialization.
-- Omits the source primary key when the database generates the column (section 3.2).
+- Omits the source primary key unless the database cannot generate it (section 3.2).
 - Uses PostgreSQL `RETURNING` to obtain the new primary key.
 
 A straightforward v1 implementation may use one-row `insert_all!` calls:
@@ -890,9 +890,9 @@ Record-by-record insertion is acceptable for v1.0.
 
 Streaming correctness, understandable code, and the extension API take priority over maximizing bulk-insert throughput.
 
-### 10.2 Existing natural-key records
+### 10.2 Existing match-key records
 
-An existing record matched by natural key is updated using an API such as:
+An existing record matched by its match key is updated using an API such as:
 
 ```ruby
 record.update_columns(attributes.except(primary_key))
@@ -904,7 +904,7 @@ Attributes omitted from the stream are not changed.
 
 ### 10.3 Existing local data
 
-Without an explicit natural key, Deckard never updates or deletes an existing destination record.
+Without an explicit match key, Deckard never updates or deletes an existing destination record.
 
 A conflict on another unique constraint causes the load to fail and roll back.
 
@@ -943,7 +943,7 @@ Applications that explicitly need post-load behavior may override `load_replican
 
 ```ruby
 class User < ActiveRecord::Base
-  def self.load_replicant(type, id, attributes, natural_key)
+  def self.load_replicant(type, id, attributes, match_key)
     destination_id, object = super
 
     object.register_in_redis
@@ -975,7 +975,7 @@ dump_replicant(dumper)
 The method writes one replicant through:
 
 ```ruby
-dumper.write(type, id, attributes, natural_key = [])
+dumper.write(type, id, attributes, match_key = [])
 ```
 
 Example:
@@ -1001,15 +1001,15 @@ end
 The corresponding class implements:
 
 ```ruby
-load_replicant(type, source_id, attributes, natural_key)
+load_replicant(type, source_id, attributes, match_key)
 ```
 
-`natural_key` is the array of attribute names the record travels with
+`match_key` is the array of attribute names the record travels with
 (section 9.2); a custom loader may use or ignore it. Example:
 
 ```ruby
 class User
-  def self.load_replicant(type, id, attributes, natural_key)
+  def self.load_replicant(type, id, attributes, match_key)
     user = User.new
     user.name = attributes["name"]
     user.email = attributes["email"]
@@ -1032,7 +1032,7 @@ Deckard v1.0 targets ordinary Rails models with:
 
 - One conventional primary-key column.
 - Integer, bigint, or database-generated UUID primary keys.
-- Primary keys the database does not generate, copied as described in section 3.2.
+- Primary keys the database cannot generate, copied as described in section 3.2.
 - Conventional `belongs_to`.
 - Conventional polymorphic `belongs_to`.
 - Conventional `has_one`.
@@ -1197,7 +1197,7 @@ Responsibilities:
 ### `Deckard::ModelConfig`
 
 - Hold one root's plan as one table of entries, the root's included: each
-  entry's associations, optional natural key, and field and association
+  entry's associations, optional match key, and field and association
   omissions, for classes that may not have loaded yet.
 - Back the `replicate do ... end` DSL.
 - Resolve the plan for a root, and the entry for a reached class, through
@@ -1243,7 +1243,7 @@ Deckard v1.0 must maintain these invariants:
 6. Every reference tuple resolves through that mapping.
 7. Multiple references to one source object resolve to one destination object.
 8. ActiveRecord validations and callbacks do not run in the default loader.
-9. Existing local records are changed only when a natural key explicitly matches them.
+9. Existing local records are changed only when a match key explicitly matches them.
 10. Standard output from dump mode contains only the stream.
 11. A stream without a successful-end marker does not commit.
 12. The loader never silently leaves an unresolved source foreign key in a destination row.
@@ -1320,17 +1320,17 @@ loaded through the executable.
 
 ### 18.7 ID remapping
 
-Source primary keys are replaced with destination-generated keys, and every supported foreign key points at the correct destination row.
+Source primary keys are replaced with destination-generated keys (except keys the database cannot generate, section 3.2), and every supported foreign key points at the correct destination row.
 
 ### 18.8 Shared dependencies
 
 Two records referencing the same source record produce only one destination copy of the shared record.
 
-### 18.9 Natural keys
+### 18.9 Match keys
 
 ```ruby
 replicate do
-  natural_key :login
+  match_by :login
 end
 ```
 
@@ -1443,7 +1443,7 @@ Implement:
 ```ruby
 replicate do
   associations
-  natural_key
+  match_by
   omit_fields
   omit_associations
 end
@@ -1453,7 +1453,7 @@ Then implement:
 
 - Selected `has_many`.
 - `model` entries for reached classes.
-- Natural-key updates.
+- Match-key updates.
 
 ### Phase 5: Original CLI
 
@@ -1512,7 +1512,7 @@ Possible work after v1.0 includes:
 - Consistent source snapshots.
 - Compression.
 - Checksums.
-- Natural-key conflict policies.
+- Match-key conflict policies.
 - Explicit preservation of IDs for disposable databases.
 
 These should be added only in response to concrete use cases.
@@ -1527,7 +1527,7 @@ Deckard v1.0 will:
 - Use `deckard` as the gem and executable name.
 - Use `Deckard` as the Ruby namespace.
 - Use `replicate do ... end` on a root model as the plan for everything its dumps reach, and nothing else.
-- Expose only `associations`, `natural_key`, `natural_keys`, `omit_fields`, `omit_associations`, and `model` inside that block.
+- Expose only `associations`, `match_by`, `match_each_model_by`, `omit_fields`, `omit_associations`, and `model` inside that block.
 - Retain dump expressions and ordinary Ruby dump scripts.
 - Retain `dump_replicant` and `load_replicant`.
 - Stream directly over standard input and output.

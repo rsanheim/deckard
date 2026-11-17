@@ -1,6 +1,6 @@
 # The forum schema behind the gem's ActiveRecord specs. One coherent domain
 # whose natural features carry every shape deckard must handle: the
-# supported associations, the ones that must fail clearly, natural keys, a
+# supported associations, the ones that must fail clearly, match keys, a
 # non-primary-key foreign key, STI, UUID keys, a composite key, a
 # dependency cycle, and a spread of PostgreSQL column types.
 class CreateForum < ActiveRecord::Migration[8.1]
@@ -86,7 +86,7 @@ class CreateForum < ActiveRecord::Migration[8.1]
     end
 
     # Tag names are deliberately not unique: a legacy forum accumulates
-    # duplicate tags, and the natural-key ambiguity examples need them.
+    # duplicate tags, and the match-key ambiguity examples need them.
     create_table :tags do |t|
       t.string :name, null: false
       t.string :slug, null: false

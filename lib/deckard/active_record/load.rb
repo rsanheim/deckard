@@ -4,12 +4,12 @@ module Deckard
   module ActiveRecord
     # Loads one replicant tuple into a model's table.
     class Load
-      def initialize(model, type, source_id, attributes, natural_key)
+      def initialize(model, type, source_id, attributes, match_key)
         @model = model
         @type = type
         @source_id = source_id
         @attributes = attributes
-        @natural_key = natural_key
+        @match_key = match_key
       end
 
       def call
@@ -17,13 +17,13 @@ module Deckard
           raise LoadError, "#{@model.name} has a composite primary key, which deckard does not support"
         end
 
-        @natural_key.empty? ? insert : load_by_natural_key
+        @match_key.empty? ? insert : load_by_match_key
       end
 
       private
 
       # `because` says what led to the insert when it was not the only path,
-      # so a failure names the natural key that matched nothing.
+      # so a failure names the match key that matched nothing.
       def insert(because = "")
         # A primary key the database cannot generate is inserted as it
         # arrived: the source's value, or the destination ID of the parent
@@ -38,25 +38,25 @@ module Deckard
           "#{@type} source_id=#{@source_id} #{because}could not be inserted: #{Deckard.error_detail(e)}"
       end
 
-      def load_by_natural_key
-        lookup = @attributes.slice(*@natural_key)
+      def load_by_match_key
+        lookup = @attributes.slice(*@match_key)
         matches = @model.where(lookup).limit(2).to_a
 
         case matches.size
         when 0
-          insert("matched no destination row by natural key (#{lookup.keys.join(", ")}) and ")
+          insert("matched no destination row by match key (#{lookup.keys.join(", ")}) and ")
         when 1
           record = matches.first
           begin
             record.update_columns(@attributes.except(@model.primary_key))
           rescue ::ActiveRecord::ActiveRecordError => e
             raise InsertError,
-              "#{@type} source_id=#{@source_id} could not be updated via natural key: #{Deckard.error_detail(e)}"
+              "#{@type} source_id=#{@source_id} could not be updated via match key: #{Deckard.error_detail(e)}"
           end
           [record.id, record]
         else
           raise LoadError,
-            "#{@type} source_id=#{@source_id}: natural key (#{lookup.keys.join(", ")}) matches more than one destination row"
+            "#{@type} source_id=#{@source_id}: match key (#{lookup.keys.join(", ")}) matches more than one destination row"
         end
       end
     end
