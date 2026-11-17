@@ -221,8 +221,8 @@ This normally boots Rails and loads the application’s model classes. Before a
 dump, Deckard eager loads the application (through Zeitwerk, when present) so
 every model’s `replicate` block has run, and validates every plan (section
 7.5) before any record is written. A load consults no plan: each record
-arrives with its match key (section 9.2), so the destination's `replicate`
-blocks are neither loaded nor checked.
+arrives with its match key (section 9.2), so the destination never consults or
+checks its `replicate` blocks.
 
 ### 6.3 Dump scripts
 
@@ -799,8 +799,9 @@ The referenced object must appear earlier in the stream.
 
 Only foreign keys that hold the referenced record's primary key are encoded
 this way. A `belongs_to` whose `primary_key` option names another column
-(`belongs_to :account, primary_key: :login`) stores a natural value; the
-referenced record is still dumped first, but the field is copied as-is.
+(`belongs_to :account, primary_key: :login`) holds that column's value, not the
+referenced record's primary key; the referenced record is still dumped first,
+but the field is copied as-is.
 
 When the destination loads the order, it replaces the reference tuple with the destination ID mapped from:
 
@@ -1293,8 +1294,8 @@ class Order < ActiveRecord::Base
 end
 ```
 
-dumps each line item's adjustments whether `LineItem` loads before or after
-`Order`; `dump LineItem.first` follows LineItem's own block, not Order's; a
+dumps each line item's adjustments whether the `LineItem` class is defined before
+or after `Order`; `dump LineItem.first` follows LineItem's own block, not Order's; a
 product reached from a line item arrives as a row without the collections
 its own entry names; and a plan naming a missing class, association, or
 attribute fails with `ConfigurationError` before any record is dumped through

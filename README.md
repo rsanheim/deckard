@@ -110,12 +110,12 @@ replicate do
 end
 ```
 
-Most reached classes need nothing but a match key, and `match_each_model_by` says
-that for all of them in one table. A `model` block is for the rest: a
-collection to bring along, a field to leave out. A plan gives each class one
-key, so naming it in both places is a plan problem, not an override.
+`match_each_model_by` gives reached classes their match keys in one table. A
+`model` block is for the rest: a collection to bring along, a field to leave
+out. A plan gives each class one key, so naming it in both places is a plan
+problem, not an override.
 
-Classes are named as strings, so the root never forces them to load first,
+Classes are named as strings, so the root never autoloads them,
 and an STI subclass follows the entry for its nearest declared ancestor. Each
 record travels with the match key its plan gave it, so the destination
 needs no plan of its own. That also means a match key is repeated in every
