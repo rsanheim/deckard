@@ -861,7 +861,7 @@ The default implementation:
 2. Looks up an existing record when the model has a match key.
 3. Otherwise prepares a new record.
 4. Writes attributes without validations or callbacks.
-5. Allows PostgreSQL to assign a new primary key for new records, when it generates that key.
+5. Allows PostgreSQL to assign a new primary key for new records.
 6. Returns the destination ID and loaded object.
 
 ### 10.1 New records
@@ -871,7 +871,7 @@ New records should be inserted through a current ActiveRecord API that:
 - Bypasses validations.
 - Bypasses callbacks.
 - Applies ActiveRecord type serialization.
-- Omits the source primary key unless the database cannot generate it (section 3.2).
+- Omits the source primary key.
 - Uses PostgreSQL `RETURNING` to obtain the new primary key.
 
 A straightforward v1 implementation may use one-row `insert_all!` calls:
@@ -1032,7 +1032,6 @@ Deckard v1.0 targets ordinary Rails models with:
 
 - One conventional primary-key column.
 - Integer, bigint, or database-generated UUID primary keys.
-- Primary keys the database cannot generate, copied as described in section 3.2.
 - Conventional `belongs_to`.
 - Conventional polymorphic `belongs_to`.
 - Conventional `has_one`.
@@ -1320,7 +1319,7 @@ loaded through the executable.
 
 ### 18.7 ID remapping
 
-Source primary keys are replaced with destination-generated keys (except keys the database cannot generate, section 3.2), and every supported foreign key points at the correct destination row.
+Source primary keys are replaced with destination-generated keys, and every supported foreign key points at the correct destination row.
 
 ### 18.8 Shared dependencies
 
