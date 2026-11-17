@@ -16,7 +16,7 @@ module Deckard
     # Records reached from this one are dumped by its plan directly, so an
     # override of this method applies to roots only.
     def dump_replicant(dumper)
-      Dump.new(self, dumper, ModelConfig.plan_for(self.class), owned: true).call
+      Dump.dump_owned([self], dumper, ModelConfig.plan_for(self.class))
     end
 
     module ClassMethods

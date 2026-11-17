@@ -2,8 +2,8 @@
 
 module Deckard
   module ActiveRecord
-    # Dumps one record by the root's plan (docs/traversal.md), and the records
-    # it reaches by the same plan.
+    # Dumps records by the root's plan (docs/traversal.md), and the records
+    # they reach by the same plan.
     class Dump
       # Stored generated columns (GENERATED ALWAYS AS ... STORED) are never
       # dumped: the destination database computes them, and PostgreSQL
@@ -19,6 +19,30 @@ module Deckard
         record.id
       end
 
+      # Dumps sibling records the plan owns, then each planned collection of
+      # the ones this visit walked.
+      def self.dump_owned(records, dumper, plan)
+        walked = records.select { |record| new(record, dumper, plan, owned: true).call }
+        walked.group_by(&:class).each do |model, owners|
+          entry = plan.for(model)
+          (entry.extra_associations - entry.omitted_associations).each do |name|
+            reflection = model.reflect_on_association(name)
+            next unless reflection.collection?
+
+            # Deckard loads a plain has_many for all the siblings in one query;
+            # anything else is queried per record.
+            plain = reflection.macro == :has_many && reflection.scope.nil? && reflection.klass.default_scopes.empty? &&
+              (reflection.options.keys - %i[class_name foreign_key inverse_of dependent]).empty?
+            relations = if plain
+              [reflection.klass.where(reflection.foreign_key => owners.map(&:id))]
+            else
+              owners.map { |owner| owner.public_send(name) }
+            end
+            relations.each { |relation| relation.find_in_batches { |batch| dump_owned(batch, dumper, plan) } }
+          end
+        end
+      end
+
       def initialize(record, dumper, plan, owned:)
         @record = record
         @model = record.class
@@ -29,16 +53,25 @@ module Deckard
         @entry = plan.for(@model)
       end
 
+      # Dumps the record and, when owned, its singular owned records. Planned
+      # collections are left to dump_owned. True when this visit walked it.
       def call
+        walked = false
         @dumper.visit(@model.name, @source_id, walk: @owned) do
           attributes = @record.attributes.except(*GENERATED_COLUMNS[@model], *@entry.omitted_fields)
           dump_belongs_to(attributes)
           @dumper.write(@model.name, @source_id, attributes, @entry.match_key)
           next unless @owned
 
+          walked = true
           owned = @model.reflect_on_all_associations(:has_one).map(&:name) | @entry.extra_associations
-          (owned - @entry.omitted_associations).each { |name| dump_owned(@record.public_send(name)) }
+          (owned - @entry.omitted_associations).each do |name|
+            next if @model.reflect_on_association(name).collection?
+
+            self.class.dump_owned(Array(@record.public_send(name)), @dumper, @plan)
+          end
         end
+        walked
       end
 
       private
@@ -83,11 +116,6 @@ module Deckard
 
         attributes[foreign_key] = [:id, reflection.klass.name, value] unless @entry.omitted_fields.include?(foreign_key)
         true
-      end
-
-      def dump_owned(associated)
-        records = associated.respond_to?(:find_each) ? associated.find_each : Array(associated)
-        records.each { |record| self.class.new(record, @dumper, @plan, owned: true).call }
       end
     end
   end
