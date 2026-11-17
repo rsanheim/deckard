@@ -144,28 +144,17 @@ These features should remain small and direct rather than becoming a generalized
 Deckard v1.0 does not include:
 
 - Anonymization or masking.
-- MySQL, SQLite, or other database adapters.
-- Complete database cloning.
-- Background synchronization.
-- Change-data capture.
-- Resumable imports.
-- Checkpointing.
-- A web interface.
-- A daemon or server.
-- Automatic SSH or deployment-platform orchestration.
-- SQL dump generation.
-- Fixture management.
+- MySQL, SQLite, or a database-adapter framework.
+- Primary-key preservation.
+- Automatic matching based on every unique index.
 - Association limits.
 - Nested association configuration syntax.
 - Custom transformation pipelines.
-- A public database-adapter framework.
-- Primary-key preservation.
-- Automatic matching based on every unique index.
-- Support for every ActiveRecord association variation.
-- Support for every PostgreSQL type or schema feature.
+- Resumable or checkpointed loads.
+- Automatic SSH or deployment-platform orchestration.
 - Optimizations that make the implementation substantially harder to understand.
 
-Deckard should fail clearly when it encounters an unsupported case rather than adding generalized machinery to accommodate it.
+Deckard does not support every ActiveRecord association or PostgreSQL feature. It should fail clearly when it encounters an unsupported case rather than adding generalized machinery to accommodate it.
 
 ## 5. Installation
 
