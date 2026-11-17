@@ -84,7 +84,7 @@ By default, every newly replicated ActiveRecord row receives a primary key gener
 
 Source primary keys are used only to identify objects within the stream. They are not inserted into destination primary-key columns.
 
-The exception is a primary key the destination database cannot generate: a column with no default, sequence, or identity, such as a natural key the application assigns or a key that is also a foreign key. That value is inserted as it arrives, after reference resolution, so an application-assigned key keeps the source's value and a foreign-key primary key takes the parent's destination ID.
+Deckard leaves the primary key out of an insert when the destination column is auto-populated: a serial or identity column, or one with a function default such as `gen_random_uuid()`. Any other primary key is inserted as it arrives, after reference resolution, so a key the application assigns keeps the source's value and a key that is also a foreign key takes the parent's destination ID.
 
 Given:
 

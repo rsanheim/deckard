@@ -25,11 +25,11 @@ module Deckard
       # `because` says what led to the insert when it was not the only path,
       # so a failure names the match key that matched nothing.
       def insert(because = "")
-        # A primary key the database cannot generate is inserted as it
-        # arrived: the source's value, or the destination ID of the parent
-        # it references.
-        generated = @model.columns_hash[@model.primary_key].auto_populated?
-        attributes = generated ? @attributes.except(@model.primary_key) : @attributes
+        # The database fills in an auto-populated primary key. Any other is
+        # inserted as it arrived: the source's value, or the destination ID
+        # of the parent it references.
+        auto_populated = @model.columns_hash[@model.primary_key].auto_populated?
+        attributes = auto_populated ? @attributes.except(@model.primary_key) : @attributes
         result = @model.insert_all!([attributes], returning: [@model.primary_key])
         destination_id = result.rows.first.first
         [destination_id, @model.find(destination_id)]
