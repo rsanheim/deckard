@@ -61,8 +61,8 @@ module Deckard
           end
           next if @entry.omitted_fields.include?(foreign_key)
           # A belongs_to whose primary_key option targets a non-primary-key
-          # column (belongs_to :account, primary_key: :login) carries a natural
-          # value, not a source ID. It needs no remapping and must not be
+          # column (belongs_to :account, primary_key: :login) holds that
+          # column's value, not a source ID. It needs no remapping and must not be
           # replaced with a destination primary key.
           next unless reflection.association_primary_key(referenced.class) == referenced.class.primary_key
 

@@ -37,7 +37,7 @@ store.
 
 A forum: authors own posts, posts own comments, authors own reactions, and a
 reaction points at a post. Author's plan says an author carries posts and
-reactions. Dump `rachael`, who reacted to one of deckard's posts.
+reactions, and a post carries its comments. Dump `rachael`, who reacted to one of deckard's posts.
 
 ```mermaid
 flowchart LR
