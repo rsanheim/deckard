@@ -1,30 +1,45 @@
 #!/usr/bin/env bash
 # End-to-end integration test: seed a source database, stream the object
-# graph between two containers over a real pipe, verify the destination.
+# graph between two apps over a real pipe, verify the destination.
+#
+# The apps and databases run in docker compose. With --no-compose, both apps
+# run in this shell against databases already up at db-source and db-dest.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "==> building harness image"
-docker compose build --provenance=false --quiet app_source
+if [[ "${1:-}" == "--no-compose" ]]; then
+  source_app=(env $(<source.env))
+  dest_app=(env $(<dest.env))
 
-echo "==> starting harness"
-docker compose up -d --wait db-source db-dest app_source app_dest
+  echo "==> waiting for databases"
+  for host in db-source db-dest; do
+    timeout 60 bash -c "until (: >/dev/tcp/$host/5432) 2>/dev/null; do sleep 1; done"
+  done
+else
+  source_app=(docker compose exec -T app_source)
+  dest_app=(docker compose exec -T app_dest)
+
+  echo "==> building harness image"
+  docker compose build --provenance=false --quiet app_source
+
+  echo "==> starting harness"
+  docker compose up -d --wait db-source db-dest app_source app_dest
+fi
 
 echo "==> preparing and seeding source"
-docker compose exec -T -e DECKARD_SEED=1 app_source \
-  bin/rails db:drop db:create db:migrate db:seed
+"${source_app[@]}" env DECKARD_SEED=1 bin/rails db:drop db:create db:migrate db:seed
 
 echo "==> preparing destination (sequences restarted at 100000 to make remapping visible)"
-docker compose exec -T app_dest bin/rails db:drop db:create db:migrate
-docker compose exec -T app_dest bin/rails runner script/reset_dest_sequences.rb
+"${dest_app[@]}" bin/rails db:drop db:create db:migrate
+"${dest_app[@]}" bin/rails runner script/reset_dest_sequences.rb
 
 echo "==> streaming source -> destination"
 # Authors are reached only through belongs_to, which carries nothing they
 # own, so profiles are dumped as roots of their own.
-docker compose exec -T -e DECKARD_HARNESS_BOOT_LOG=1 app_source bin/dump "[Comment.all, Profile.all]" \
-  | docker compose exec -T app_dest bin/load
+"${source_app[@]}" env DECKARD_HARNESS_BOOT_LOG=1 bin/dump "[Comment.all, Profile.all]" \
+  | "${dest_app[@]}" bin/load
 
 echo "==> verifying destination"
-docker compose exec -T app_dest bin/verify
+"${dest_app[@]}" bin/verify
 
 echo "==> stream test passed"

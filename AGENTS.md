@@ -8,8 +8,11 @@
 - CI runs `bundle exec rake`: RSpec unit/integration tests, Standard lint, and
   the style ratchet (`bin/ratchet`). Gems and lint caches live under
   `/cache/deckard/`.
-- The Docker end-to-end harness (`bundle exec rake e2e`) and performance suite
-  (`bundle exec rake perf`) are separate tasks and are not included in CI.
+- [`.crow/e2e.yaml`](.crow/e2e.yaml) runs the end-to-end stream test on the
+  same events: `harness/bin/stream_test --no-compose`, with both apps in one
+  step and a PostgreSQL service for each side.
+- The performance suite (`bundle exec rake perf`) is a separate task and is
+  not included in CI.
 - Validate workflow edits with `crow lint --strict .crow/`. Check the pushed
   commit with `crow-watch --timeout 5m` and require a successful PR pipeline
   before merging. For failures, use the log command printed by `crow-watch`.
