@@ -20,7 +20,7 @@ class PerfRecord
   end
 
   # Near-zero work: no store, no object allocation beyond the tuple.
-  def self.load_replicant(type, source_id, attributes, natural_key)
+  def self.load_replicant(type, source_id, attributes, match_key)
     [source_id + 1, nil]
   end
 end
@@ -40,7 +40,7 @@ class PerfConcurrencyRecord
     attr_accessor :loaded_count
   end
 
-  def self.load_replicant(type, source_id, attributes, natural_key)
+  def self.load_replicant(type, source_id, attributes, match_key)
     self.loaded_count += 1
     [source_id + 1, nil]
   end
@@ -62,7 +62,7 @@ class PerfLargeAttributeRecord
     attr_accessor :loaded_payload
   end
 
-  def self.load_replicant(type, source_id, attributes, natural_key)
+  def self.load_replicant(type, source_id, attributes, match_key)
     self.loaded_payload = attributes["payload"]
     [source_id + 1, nil]
   end

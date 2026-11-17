@@ -41,23 +41,23 @@ RSpec.describe Deckard::ModelConfig do
     expect(plan.omitted_associations).to eq([:profile])
   end
 
-  it "fills one entry per class from a natural_keys table, one attribute or several" do
+  it "fills one entry per class from a match_each_model_by table, one attribute or several" do
     plan = Deckard::ModelConfig.new("Order")
-    plan.natural_keys "Customer" => :email, "Warehouse" => [:region, :code]
+    plan.match_each_model_by "Customer" => :email, "Warehouse" => [:region, :code]
     plan.model("Customer") { omit_fields :password_digest }
 
     expect(plan.to_h["entries"].drop(1)).to eq([
-      {"model" => "Customer", "associations" => [], "natural_key" => ["email"],
+      {"model" => "Customer", "associations" => [], "match_by" => ["email"],
        "omit_fields" => ["password_digest"], "omit_associations" => []},
-      {"model" => "Warehouse", "associations" => [], "natural_key" => %w[region code],
+      {"model" => "Warehouse", "associations" => [], "match_by" => %w[region code],
        "omit_fields" => [], "omit_associations" => []}
     ])
   end
 
-  it "reports a natural key given twice for one class instead of letting the later one win" do
+  it "reports a match key given twice for one class instead of letting the later one win" do
     plan = Deckard::ModelConfig.new("Order")
-    plan.natural_keys "Customer" => :email
-    plan.model("Customer") { natural_key :login }
+    plan.match_each_model_by "Customer" => :email
+    plan.model("Customer") { match_by :login }
     customer = Class.new do
       def self.name = "Customer"
 
@@ -67,16 +67,16 @@ RSpec.describe Deckard::ModelConfig do
     end
 
     expect { plan.for(customer) }.to raise_error(
-      Deckard::ConfigurationError, "Customer is given a natural key more than once in the same plan"
+      Deckard::ConfigurationError, "Customer is given a match key more than once in the same plan"
     )
   end
 
   it "describes itself as data, root entry first" do
     plan = Deckard::ModelConfig.new("Order")
     plan.associations :line_items
-    plan.natural_key :number
+    plan.match_by :number
     plan.model("Customer") do
-      natural_key :email
+      match_by :email
       omit_fields :password_digest
       omit_associations :sessions
     end
@@ -84,9 +84,9 @@ RSpec.describe Deckard::ModelConfig do
     expect(plan.to_h).to eq(
       "root" => "Order",
       "entries" => [
-        {"model" => "Order", "associations" => ["line_items"], "natural_key" => ["number"],
+        {"model" => "Order", "associations" => ["line_items"], "match_by" => ["number"],
          "omit_fields" => [], "omit_associations" => []},
-        {"model" => "Customer", "associations" => [], "natural_key" => ["email"],
+        {"model" => "Customer", "associations" => [], "match_by" => ["email"],
          "omit_fields" => ["password_digest"], "omit_associations" => ["sessions"]}
       ]
     )
@@ -94,7 +94,7 @@ RSpec.describe Deckard::ModelConfig do
 
   it "keeps every model entry in one table, however deeply it is declared" do
     plan = Deckard::ModelConfig.new("Order")
-    plan.model("LineItem") { model("Adjustment") { natural_key :code } }
+    plan.model("LineItem") { model("Adjustment") { match_by :code } }
     order = Class.new { def self.name = "Order" }
     adjustment = Class.new do
       def self.name = "Adjustment"
@@ -103,6 +103,6 @@ RSpec.describe Deckard::ModelConfig do
     end
 
     expect(plan.for(order)).to equal(plan)
-    expect(plan.for(adjustment).natural_key_attributes).to eq(["code"])
+    expect(plan.for(adjustment).match_key).to eq(["code"])
   end
 end

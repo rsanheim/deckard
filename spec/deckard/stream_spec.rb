@@ -27,7 +27,7 @@ class FakeAuthor
     dumper.write(self.class, id, {"name" => name})
   end
 
-  def self.load_replicant(type, source_id, attributes, natural_key)
+  def self.load_replicant(type, source_id, attributes, match_key)
     author = new(id: next_id, name: attributes["name"])
     self.next_id += 1
     store[author.id] = author
@@ -64,7 +64,7 @@ class FakePost
     dumper.write(self.class, id, attributes)
   end
 
-  def self.load_replicant(type, source_id, attributes, natural_key)
+  def self.load_replicant(type, source_id, attributes, match_key)
     post = new(id: next_id, title: attributes["title"], author_id: attributes["author_id"])
     self.next_id += 1
     store[post.id] = post
@@ -208,7 +208,7 @@ RSpec.describe "Deckard stream" do
       .to raise_error(Deckard::LoadError, /String does not implement load_replicant/)
   end
 
-  it "rejects a frame without a natural key, including the old three-element tuple" do
+  it "rejects a frame without a match key, including the old three-element tuple" do
     [["FakeAuthor", 1, {"name" => "Rob"}], ["FakeAuthor", 1, {"name" => "Rob"}, nil]].each do |frame|
       io = StringIO.new
       Marshal.dump(Deckard::STREAM_HEADER, io)

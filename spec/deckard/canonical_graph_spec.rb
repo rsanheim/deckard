@@ -82,7 +82,7 @@ RSpec.describe "canonical forum graph", db: :multiple do
         expect(ids & source_ids.fetch(type)).to be_empty
       end
 
-      # Loading the same stream again reuses every naturally keyed row and
+      # Loading the same stream again reuses every row with a match key and
       # inserts everything else afresh.
       stream.rewind
       keyed_rows = [Author.count, Category.count]

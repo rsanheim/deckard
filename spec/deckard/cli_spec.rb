@@ -64,9 +64,9 @@ RSpec.describe "deckard CLI" do
     expect(JSON.parse(out)).to eq(
       "root" => "WidgetOrder",
       "entries" => [
-        {"model" => "WidgetOrder", "associations" => [], "natural_key" => [], "omit_fields" => [],
+        {"model" => "WidgetOrder", "associations" => [], "match_by" => [], "omit_fields" => [],
          "omit_associations" => ["warehouse"]},
-        {"model" => "WidgetLine", "associations" => ["adjustments"], "natural_key" => [], "omit_fields" => [],
+        {"model" => "WidgetLine", "associations" => ["adjustments"], "match_by" => [], "omit_fields" => [],
          "omit_associations" => ["tax"]}
       ]
     )

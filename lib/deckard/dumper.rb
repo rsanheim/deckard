@@ -57,13 +57,13 @@ module Deckard
     end
 
     # Called by dump_replicant implementations to emit one replicant tuple.
-    # natural_key names the attributes by which the destination matches an
+    # match_key names the attributes by which the destination matches an
     # existing record to reuse; empty means always insert.
-    def write(type, id, attributes, natural_key = [])
+    def write(type, id, attributes, match_key = [])
       type = type.to_s
       return unless @dumped.add?([type, id])
 
-      write_frame([type, id, attributes, natural_key])
+      write_frame([type, id, attributes, match_key])
       @counts[type] += 1
       @after_write&.call(@counts)
     end
