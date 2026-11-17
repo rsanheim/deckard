@@ -52,9 +52,16 @@ class CreateForum < ActiveRecord::Migration[8.1]
     end
     add_index :categories, :slug, unique: true
 
+    # Keyed by the SPDX identifier the application assigns: a primary key
+    # the database cannot generate.
+    create_table :licenses, id: :string do |t|
+      t.string :name, null: false
+    end
+
     create_table :posts do |t|
       t.references :author, null: false, foreign_key: true
       t.references :category, foreign_key: true
+      t.references :license, type: :string, foreign_key: true
       t.string :title, null: false
       t.text :body
       t.enum :status, enum_type: :post_status, null: false, default: "draft"

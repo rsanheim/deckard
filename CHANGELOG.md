@@ -15,6 +15,13 @@ change the stream format and the Ruby API.
   aliases for the old names. `--plan` output uses `match_by` in JSON and
   "match by" in text. The stream format is unchanged.
 
+### Fixed
+
+- Load rows whose primary key the destination database cannot generate (no
+  default, sequence, or identity), such as an application-assigned string
+  key or a primary key that is also a foreign key. The key is inserted as it
+  arrives; dropping it failed the insert with a `NotNullViolation`.
+
 ## [0.3.1] - 2026-10-10
 
 ### Fixed

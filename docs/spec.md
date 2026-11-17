@@ -84,6 +84,8 @@ By default, every newly replicated ActiveRecord row receives a primary key gener
 
 Source primary keys are used only to identify objects within the stream. They are not inserted into destination primary-key columns.
 
+The exception is a primary key the destination database cannot generate: a column with no default, sequence, or identity, such as a natural key the application assigns or a key that is also a foreign key. That value is inserted as it arrives, after reference resolution, so an application-assigned key keeps the source's value and a foreign-key primary key takes the parent's destination ID.
+
 Given:
 
 ```text
@@ -157,7 +159,7 @@ Deckard v1.0 does not include:
 - Nested association configuration syntax.
 - Custom transformation pipelines.
 - A public database-adapter framework.
-- Primary-key preservation.
+- Preserving primary keys the database generates.
 - Automatic matching based on every unique index.
 - Support for every ActiveRecord association variation.
 - Support for every PostgreSQL type or schema feature.
@@ -859,7 +861,7 @@ The default implementation:
 2. Looks up an existing record when the model has a match key.
 3. Otherwise prepares a new record.
 4. Writes attributes without validations or callbacks.
-5. Allows PostgreSQL to assign a new primary key for new records.
+5. Allows PostgreSQL to assign a new primary key for new records, when it generates that key.
 6. Returns the destination ID and loaded object.
 
 ### 10.1 New records
@@ -869,7 +871,7 @@ New records should be inserted through a current ActiveRecord API that:
 - Bypasses validations.
 - Bypasses callbacks.
 - Applies ActiveRecord type serialization.
-- Omits the source primary key.
+- Omits the source primary key unless the database cannot generate it (section 3.2).
 - Uses PostgreSQL `RETURNING` to obtain the new primary key.
 
 A straightforward v1 implementation may use one-row `insert_all!` calls:
@@ -1030,6 +1032,7 @@ Deckard v1.0 targets ordinary Rails models with:
 
 - One conventional primary-key column.
 - Integer, bigint, or database-generated UUID primary keys.
+- Primary keys the database cannot generate, copied as described in section 3.2.
 - Conventional `belongs_to`.
 - Conventional polymorphic `belongs_to`.
 - Conventional `has_one`.
@@ -1235,7 +1238,7 @@ Deckard v1.0 must maintain these invariants:
 1. A source object is emitted no more than once.
 2. An emitted object is identified by its type and source ID.
 3. A referenced object appears before the object that references it.
-4. A source primary key is not inserted as the primary key of a newly created destination record.
+4. A source primary key is not inserted as the primary key of a newly created destination record, unless the destination database cannot generate that key.
 5. Every loaded object produces a source-to-destination ID mapping.
 6. Every reference tuple resolves through that mapping.
 7. Multiple references to one source object resolve to one destination object.
@@ -1317,7 +1320,7 @@ loaded through the executable.
 
 ### 18.7 ID remapping
 
-Source primary keys are replaced with destination-generated keys, and every supported foreign key points at the correct destination row.
+Source primary keys are replaced with destination-generated keys (except keys the database cannot generate, section 3.2), and every supported foreign key points at the correct destination row.
 
 ### 18.8 Shared dependencies
 
