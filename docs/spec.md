@@ -159,7 +159,7 @@ Deckard v1.0 does not include:
 - Nested association configuration syntax.
 - Custom transformation pipelines.
 - A public database-adapter framework.
-- Preserving primary keys the database generates.
+- Primary-key preservation.
 - Automatic matching based on every unique index.
 - Support for every ActiveRecord association variation.
 - Support for every PostgreSQL type or schema feature.
