@@ -110,8 +110,9 @@ replicate do
 end
 ```
 
-`match_each_model_by` gives reached classes their match keys in one table. A `model` block is for the rest: a
-collection to bring along, a field to leave out. A plan gives each class one
+`match_each_model_by` gives reached classes their match keys in one table. A
+`model` block is for the rest: a collection to bring along, a field to leave
+out. A plan gives each class one
 key, so naming it in both places is a plan problem, not an override.
 
 Classes are named as strings, so the root never autoloads them,
