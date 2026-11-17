@@ -52,8 +52,7 @@ class CreateForum < ActiveRecord::Migration[8.1]
     end
     add_index :categories, :slug, unique: true
 
-    # Keyed by the SPDX identifier the application assigns: a primary key
-    # the database cannot generate.
+    # Keyed by its SPDX identifier, a primary key that is not auto-populated.
     create_table :licenses, id: :string do |t|
       t.string :name, null: false
     end
