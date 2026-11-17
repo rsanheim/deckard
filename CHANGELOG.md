@@ -14,6 +14,10 @@ change the stream format and the Ruby API.
   destination matches an existing row by those attributes. There are no
   aliases for the old names. `--plan` output uses `match_by` in JSON and
   "match by" in text. The stream format is unchanged.
+- Dump a planned collection with one query per batch of sibling records,
+  not one per record. Siblings now come before their collections in the
+  stream; a referenced record still comes before the records that point
+  at it.
 
 ### Fixed
 

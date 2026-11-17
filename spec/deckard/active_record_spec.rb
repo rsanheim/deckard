@@ -48,6 +48,25 @@ RSpec.describe Deckard::ActiveRecord, :db do
     expect(Post.where(author_id: author.id).count).to eq(6)
   end
 
+  it "queries each planned collection once for a batch of sibling records" do
+    author = create_author("rachael")
+    post = Post.create!(author: author, title: "Nexus-6 field notes")
+    5.times { |i| Comment.create!(post: post, author: author, body: "comment #{i}") }
+
+    reply_queries = 0
+    mention_queries = 0
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      reply_queries += 1 if payload[:sql].include?('"parent_id"')
+      mention_queries += 1 if payload[:sql].include?('"mentions"')
+    end
+    _, dumper = stream(post)
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+
+    expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Comment" => 5)
+    expect(reply_queries).to eq(1)
+    expect(mention_queries).to eq(1)
+  end
+
   it "round trips a graph with destination-generated keys and remapped foreign keys" do
     author = create_author("rachael")
     post = Post.create!(author: author, title: "Nexus-6 field notes")

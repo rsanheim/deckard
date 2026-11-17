@@ -19,6 +19,29 @@ module Deckard
         record.id
       end
 
+      # Dumps sibling records the plan owns, then each planned collection of
+      # the ones this visit walked: one batched query per class and
+      # collection, rather than one per record.
+      def self.dump_owned(records, dumper, plan)
+        walked = records.select { |record| new(record, dumper, plan, owned: true).call }
+        walked.group_by(&:class).each do |model, owners|
+          entry = plan.for(model)
+          (entry.extra_associations - entry.omitted_associations).each do |name|
+            reflection = model.reflect_on_association(name)
+            next unless reflection.collection?
+
+            # A scope that takes the owner cannot be shared across owners.
+            relations = if reflection.scope&.arity&.positive?
+              owners.map { |owner| owner.public_send(name) }
+            else
+              keys = owners.map { |owner| owner[reflection.active_record_primary_key] }.compact
+              [owners.first.association(name).scope.unscope(where: reflection.foreign_key).where(reflection.foreign_key => keys)]
+            end
+            relations.each { |relation| relation.find_in_batches { |batch| dump_owned(batch, dumper, plan) } }
+          end
+        end
+      end
+
       def initialize(record, dumper, plan, owned:)
         @record = record
         @model = record.class
@@ -29,16 +52,25 @@ module Deckard
         @entry = plan.for(@model)
       end
 
+      # Dumps the record and, when owned, its singular owned records. Planned
+      # collections are left to dump_owned. True when this visit walked it.
       def call
+        walked = false
         @dumper.visit(@model.name, @source_id, walk: @owned) do
           attributes = @record.attributes.except(*GENERATED_COLUMNS[@model], *@entry.omitted_fields)
           dump_belongs_to(attributes)
           @dumper.write(@model.name, @source_id, attributes, @entry.match_key)
           next unless @owned
 
+          walked = true
           owned = @model.reflect_on_all_associations(:has_one).map(&:name) | @entry.extra_associations
-          (owned - @entry.omitted_associations).each { |name| dump_owned(@record.public_send(name)) }
+          (owned - @entry.omitted_associations).each do |name|
+            next if @model.reflect_on_association(name).collection?
+
+            self.class.dump_owned(Array(@record.public_send(name)), @dumper, @plan)
+          end
         end
+        walked
       end
 
       private
@@ -83,11 +115,6 @@ module Deckard
 
         attributes[foreign_key] = [:id, reflection.klass.name, value] unless @entry.omitted_fields.include?(foreign_key)
         true
-      end
-
-      def dump_owned(associated)
-        records = associated.respond_to?(:find_each) ? associated.find_each : Array(associated)
-        records.each { |record| self.class.new(record, @dumper, @plan, owned: true).call }
       end
     end
   end
