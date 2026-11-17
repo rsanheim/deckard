@@ -80,6 +80,20 @@ end
 class AnnouncementCategory < Category
 end
 
+# A board previews each of its posts with only the earliest comments, over
+# the categories table.
+class Board < ActiveRecord::Base
+  self.table_name = "categories"
+  has_many :posts, foreign_key: :category_id
+
+  replicate do
+    associations :posts
+    model "Post" do
+      associations :earliest_comments
+    end
+  end
+end
+
 class License < ActiveRecord::Base
   has_many :posts
 
@@ -145,6 +159,7 @@ class Post < ActiveRecord::Base
   belongs_to :category, optional: true
   belongs_to :license, optional: true
   has_many :comments
+  has_many :earliest_comments, -> { order(:id).limit(2) }, class_name: "Comment"
   has_many :post_tags
   has_many :tags, through: :post_tags
 

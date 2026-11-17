@@ -51,20 +51,40 @@ RSpec.describe Deckard::ActiveRecord, :db do
   it "queries each planned collection once for a batch of sibling records" do
     author = create_author("rachael")
     post = Post.create!(author: author, title: "Nexus-6 field notes")
-    5.times { |i| Comment.create!(post: post, author: author, body: "comment #{i}") }
+    comments = 3.times.map { |i| Comment.create!(post: post, author: author, body: "comment #{i}") }
+    reply = Comment.create!(post: post, author: author, parent: comments[1], body: "a reply")
+    mention = Mention.create!(comment: comments[2], mentioned_username: "rachael")
 
     reply_queries = 0
     mention_queries = 0
     subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
-      reply_queries += 1 if payload[:sql].include?('"parent_id"')
+      reply_queries += 1 if payload[:sql].include?('"parent_id" IN')
       mention_queries += 1 if payload[:sql].include?('"mentions"')
     end
-    _, dumper = stream(post)
+    io, _ = stream(post)
     ActiveSupport::Notifications.unsubscribe(subscriber)
 
-    expect(dumper.counts).to eq("Author" => 1, "Post" => 1, "Comment" => 5)
+    dumped = frames(io).map { |type, id| [type, id] }
+    expect(dumped).to contain_exactly(
+      ["Author", author.id], ["Post", post.id], *(comments + [reply]).map { |c| ["Comment", c.id] }, ["Mention", mention.id]
+    )
+    # The reply is also one of the post's comments, so it is walked with them.
     expect(reply_queries).to eq(1)
     expect(mention_queries).to eq(1)
+  end
+
+  it "queries a scoped collection per record, so a limit applies to each" do
+    author = create_author("rachael")
+    board = Board.create!(name: "General", slug: "general")
+    posts = 2.times.map { |i| Post.create!(author: author, category_id: board.id, title: "Post #{i}") }
+    comments = posts.map do |post|
+      3.times.map { |i| Comment.create!(post: post, author: author, body: "#{post.title} comment #{i}") }
+    end
+
+    io, _ = stream(board)
+
+    dumped_comments = frames(io).filter_map { |type, id| id if type == "Comment" }
+    expect(dumped_comments).to contain_exactly(*comments.flat_map { |thread| thread.first(2).map(&:id) })
   end
 
   it "round trips a graph with destination-generated keys and remapped foreign keys" do

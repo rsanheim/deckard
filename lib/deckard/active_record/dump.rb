@@ -2,8 +2,8 @@
 
 module Deckard
   module ActiveRecord
-    # Dumps one record by the root's plan (docs/traversal.md), and the records
-    # it reaches by the same plan.
+    # Dumps records by the root's plan (docs/traversal.md), and the records
+    # they reach by the same plan.
     class Dump
       # Stored generated columns (GENERATED ALWAYS AS ... STORED) are never
       # dumped: the destination database computes them, and PostgreSQL
@@ -20,8 +20,7 @@ module Deckard
       end
 
       # Dumps sibling records the plan owns, then each planned collection of
-      # the ones this visit walked: one batched query per class and
-      # collection, rather than one per record.
+      # the ones this visit walked.
       def self.dump_owned(records, dumper, plan)
         walked = records.select { |record| new(record, dumper, plan, owned: true).call }
         walked.group_by(&:class).each do |model, owners|
@@ -30,12 +29,14 @@ module Deckard
             reflection = model.reflect_on_association(name)
             next unless reflection.collection?
 
-            # A scope that takes the owner cannot be shared across owners.
-            relations = if reflection.scope&.arity&.positive?
-              owners.map { |owner| owner.public_send(name) }
+            # Deckard loads a plain has_many for all the siblings in one query;
+            # anything else is queried per record.
+            plain = reflection.macro == :has_many && reflection.scope.nil? && reflection.klass.default_scopes.empty? &&
+              (reflection.options.keys - %i[class_name foreign_key inverse_of dependent]).empty?
+            relations = if plain
+              [reflection.klass.where(reflection.foreign_key => owners.map(&:id))]
             else
-              keys = owners.map { |owner| owner[reflection.active_record_primary_key] }.compact
-              [owners.first.association(name).scope.unscope(where: reflection.foreign_key).where(reflection.foreign_key => keys)]
+              owners.map { |owner| owner.public_send(name) }
             end
             relations.each { |relation| relation.find_in_batches { |batch| dump_owned(batch, dumper, plan) } }
           end
