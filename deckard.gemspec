@@ -11,8 +11,7 @@ Gem::Specification.new do |spec|
 
   spec.summary = "Stream ActiveRecord objects between Rails environments"
   spec.description = "Copy selected ActiveRecord records and their associations between " \
-    "PostgreSQL databases, with destination-generated primary keys, remapped " \
-    "foreign keys, and transactional loads."
+    "PostgreSQL databases, with remapped foreign keys and transactional loads."
   spec.homepage = "https://github.com/rsanheim/deckard"
   spec.required_ruby_version = ">= 3.2.0"
   spec.metadata["allowed_push_host"] = "https://rubygems.org"

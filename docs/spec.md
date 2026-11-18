@@ -1,6 +1,6 @@
 # Deckard v1.0 Specification
 
-**Status:** Current for main. Sections 19 to 21 record the implementation plan and deferrals.  
+**Status:** Current for main. Section 19 tracks remaining release work.\
 **Gem:** `deckard`  
 **Executable:** `deckard`  
 **Ruby namespace:** `Deckard`  
@@ -28,7 +28,7 @@ Deckard is a direct resurrection of the original `replicate` gem’s operating m
 3. Traverse the selected objects and associations.
 4. Stream each object to standard output as it is discovered.
 5. Pipe that stream to Deckard in the destination Rails application.
-6. Insert each object with a new local primary key.
+6. Insert each object or update a matching destination row.
 7. Rewrite foreign keys using a source-to-destination ID map.
 
 Deckard does not introduce a server, direct database-to-database connection, configuration file, query language, or elaborate CLI.
@@ -510,7 +510,8 @@ dump repo.issues.flat_map(&:comments)
 
 ### 7.2 Match keys
 
-By default, the loader creates a new destination record and assigns it a new destination primary key.
+By default, the loader creates a new destination record using the
+[primary-key rules in section 3.2](#32-primary-key-remapping).
 
 A plan can define a match key when existing destination records should be reused:
 
@@ -537,7 +538,7 @@ The key travels with each record in the stream. When loading a record with a mat
 1. Resolves any replicated foreign-key references in the match key.
 2. Looks for an existing destination record matching all match-key attributes.
 3. Updates that record if exactly one match exists.
-4. Creates a new record with a new destination primary key if no match exists.
+4. Creates a new record if no match exists.
    If that insert fails, the error names the match key that matched nothing,
    since a row the plan expected to find is the usual cause.
 5. Fails if the lookup is ambiguous.
@@ -692,7 +693,11 @@ If several orders reference the same customer, that customer is written once. Ev
 
 ActiveRecord relations and collection associations should be iterated in batches where practical.
 
-Deckard queries a plain planned `has_many`, one with no scope or options beyond its class and foreign key, once for a batch of sibling records. It queries any other planned collection once per record.
+Deckard batches queries for a plain planned `has_many` across sibling
+records. The association must have no scope, the target model must have no
+default scopes, and the only allowed options are `class_name`,
+`foreign_key`, `inverse_of`, and `dependent`. Deckard queries other planned
+collections per record.
 
 Deckard must not convert an entire relation into an array merely to begin dumping it.
 
@@ -847,7 +852,7 @@ The default implementation:
 2. Looks up an existing record when the record arrives with a match key.
 3. Otherwise prepares a new record.
 4. Writes attributes without validations or callbacks.
-5. Allows PostgreSQL to assign a new primary key for new records.
+5. Uses the resulting destination primary key to resolve subsequent references.
 6. Returns the destination ID and loaded object.
 
 ### 10.1 New records
@@ -857,20 +862,8 @@ New records should be inserted through a current ActiveRecord API that:
 - Bypasses validations.
 - Bypasses callbacks.
 - Applies ActiveRecord type serialization.
-- Omits the source primary key.
-- Uses PostgreSQL `RETURNING` to obtain the new primary key.
-
-A straightforward v1 implementation may use one-row `insert_all!` calls:
-
-```ruby
-result = insert_all!(
-  [attributes.except(primary_key)],
-  returning: [primary_key]
-)
-
-destination_id = result.rows.first.first
-object = find(destination_id)
-```
+- Omits auto-populated primary keys and writes other keys as attributes.
+- Uses PostgreSQL `RETURNING` to obtain the destination primary key.
 
 Record-by-record insertion is acceptable for v1.0.
 
@@ -1017,7 +1010,8 @@ There is no custom-object registry or adapter API. Deckard constantizes the stre
 Deckard v1.0 targets ordinary Rails models with:
 
 - One conventional primary-key column.
-- Integer, bigint, or database-generated UUID primary keys.
+- Auto-populated primary keys such as sequence-backed integers or
+  database-generated UUIDs, and keys supplied by the application.
 - Conventional `belongs_to`.
 - Conventional polymorphic `belongs_to`.
 - Conventional `has_one`.
@@ -1374,111 +1368,9 @@ A dump whose application prints to stdout while booting still produces a
 valid stream on standard output; the application's output appears on
 standard error.
 
-## 19. Implementation order
+## 19. Remaining release work
 
-Status:
-
-- [x] Phase 1: Core stream
-- [x] Phase 2: Integration test harness
-- [x] Phase 3: ActiveRecord basics
-- [x] Phase 4: Original model API
-- [x] Phase 5: Original CLI
-- [ ] Phase 6: Hardening and release
-
-### Phase 1: Core stream
-
-Implement:
-
-- `Deckard::Dumper`.
-- `Deckard::Loader`.
-- Versioned Marshal header.
-- Replicant tuples.
-- End marker.
-- Type-and-ID memoization.
-- Source-to-destination ID map.
-- Basic custom-object hooks.
-
-### Phase 2: Integration test harness
-
-Build this early so every later phase can be verified against real streaming:
-
-- Test Rails app with at least 4 models covering `belongs_to`, `has_one`, and `has_many` associations.
-- Real PostgreSQL database.
-- Two Docker containers (source and destination), each running the test app against its own
-  PostgreSQL database, piping an actual dump stream from one to the other.
-
-### Phase 3: ActiveRecord basics
-
-Implement:
-
-- ActiveRecord 8 installation hook.
-- Default `dump_replicant`.
-- Default `load_replicant`.
-- PostgreSQL insertion with generated IDs.
-- Reference encoding and remapping.
-- `belongs_to`.
-- `has_one`.
-- Callback and validation bypass.
-- Transactional load.
-
-### Phase 4: Original model API
-
-Implement:
-
-```ruby
-replicate do
-  associations
-  match_by
-  omit_fields
-  omit_associations
-end
-```
-
-Then implement:
-
-- Selected `has_many`.
-- `model` entries for reached classes.
-- Match-key updates.
-
-### Phase 5: Original CLI
-
-Implement:
-
-```text
--r
--d
--l
-```
-
-Then add:
-
-- Expression evaluation.
-- Dump-script evaluation.
-- Standard-error status.
-- Pipe-failure handling.
-- Standard output reservation for the stream.
-- SSH workflow documentation.
-
-### Phase 6: Hardening and release
-
-Complete:
-
-- [ ] ActiveRecord 8 test matrix (currently 8.1 only).
-- [x] PostgreSQL integration tests.
-- [x] Integer and UUID primary-key tests.
-- [ ] Large-record streaming and performance tests (`rake perf`: memory
-      bounded per section 18.14, large attributes, throughput baseline).
-- [x] Truncated-stream rollback tests.
-- [x] Security warnings around `Marshal` and production data.
-- [x] Gem packaging (release metadata, MIT license, and strict gem build).
-- [x] `deckard` executable.
-- [x] README examples mirroring the original `replicate` README.
-
-Also completed beyond the original list: ActiveRecord edge-case coverage
-(generated columns, native PostgreSQL enums, ActiveRecord encryption with
-cross-environment keys, STI references, self-referential associations,
-composite-PK errors), informed by failures observed in downstream application
-integration testing.
+- [ ] Add an ActiveRecord 8 test matrix. CI currently covers only 8.1.
 
 ## 20. Deferred work
 

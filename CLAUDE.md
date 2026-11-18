@@ -9,9 +9,8 @@ resurrection of the `replicate` gem targeting ActiveRecord 8+ and PostgreSQL. Ty
 production records into a local dev database over SSH.
 
 **`docs/spec.md` is the authoritative v1.0 specification.** Read it before implementing anything. It defines
-the API, stream format, correctness invariants (section 17), acceptance criteria (section 18), implementation
-order (section 19), and — critically — long lists of explicit non-goals. Do not add features, options,
-adapters, or abstractions the spec excludes.
+the API, stream format, correctness invariants (section 17), acceptance criteria (section 18),
+and non-goals.
 
 ## Commands
 
@@ -31,11 +30,7 @@ bundle exec rake db:reset     # drop, create, migrate, and seed the test databas
 ## CI
 
 See [AGENTS.md](AGENTS.md#ci-and-validation) for CI coverage and validation
-commands. The Crow workflow in `.crow/ruby.yaml` runs `bundle exec rake`
-(specs, Standard lint, and the style ratchet) on PRs, default-branch pushes,
-and manual triggers. It uses Ruby and an isolated PostgreSQL service.
-`.crow/e2e.yaml` runs the end-to-end stream test on the same events.
-Performance tests are a separate task; a green CI result does not cover them.
+commands.
 
 ## Test tiers
 
@@ -66,8 +61,8 @@ operator would, through real apps and a real pipe.
 
 The operating model is a Unix pipeline: dump on the source (`deckard -r ./config/environment -d "User.find(1)"`),
 stream versioned Marshal frames over stdout, load on the destination (`deckard -r ./config/environment -l`)
-inside one transaction that commits only after a valid end marker. Primary keys are remapped: the destination
-generates new IDs and foreign keys are rewritten via a source-to-destination ID map.
+inside one transaction that commits only after a valid end marker. Foreign keys are rewritten via a
+source-to-destination ID map.
 
 Internal structure (spec section 16) — a few small classes, no adapter frameworks or registries:
 

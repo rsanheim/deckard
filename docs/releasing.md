@@ -9,6 +9,9 @@ Deckard quick reference:
 2. Synchronize Deckard's version in the PATH and CHECKSUMS entries of
    `Gemfile.lock`.
 3. Run `bundle exec rake` and `BUNDLE_FROZEN=true bundle exec rake build`.
-4. Merge the reviewed PR to `main` to publish.
+4. Require `ci/crow/pr/ruby`, `ci/crow/pr/e2e`, and `release / prepare`
+   to pass, then merge the reviewed PR to `main` to publish.
+
+The `release` environment must allow deployments only from `main`.
 
 The caller is [`.github/workflows/release.yml`](../.github/workflows/release.yml).

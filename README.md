@@ -2,8 +2,8 @@
 
 Deckard copies selected ActiveRecord records, and the records they need,
 from one Rails environment into another. Pick a record, and its plan says
-what comes with it. Rows land with new primary keys, foreign keys are
-rewritten to match, and the load commits only when the stream ends cleanly.
+what comes with it. Deckard remaps foreign keys to the destination rows
+and commits the load only when the stream ends cleanly.
 Its usual job is pulling one production record and its graph into a local
 development database to debug against real data.
 

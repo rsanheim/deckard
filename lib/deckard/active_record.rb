@@ -26,8 +26,8 @@ module Deckard
       end
 
       # Load one streamed replicant: reuse an existing row when its match
-      # key matches, otherwise insert a new row with a destination-generated
-      # primary key. Both paths bypass validations and callbacks.
+      # key matches, otherwise insert a new row. Both paths bypass validations
+      # and callbacks.
       def load_replicant(type, source_id, attributes, match_key)
         Load.new(self, type, source_id, attributes, match_key).call
       end
