@@ -11,4 +11,6 @@ Deckard quick reference:
 3. Run `bundle exec rake` and `BUNDLE_FROZEN=true bundle exec rake build`.
 4. Merge the reviewed PR to `main` to publish.
 
+The `release` environment must allow deployments only from `main`.
+
 The caller is [`.github/workflows/release.yml`](../.github/workflows/release.yml).

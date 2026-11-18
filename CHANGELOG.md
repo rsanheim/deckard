@@ -7,6 +7,8 @@ change the stream format and the Ruby API.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-17
+
 ### Changed
 
 - `natural_key` is now `match_by`, and `natural_keys` is now
