@@ -212,8 +212,9 @@ specification and `docs/traversal.md` for how a dump walks the graph.
 Crow CI runs `bundle exec rake` on pull requests, default-branch pushes, and
 manual runs using Ruby and an isolated PostgreSQL service. The workflow in
 [`.crow/ruby.yaml`](.crow/ruby.yaml) defines the runtime versions and covers
-specs, Standard lint, and the style ratchet. The Docker end-to-end harness and
-performance suite remain separate local tasks.
+specs, Standard lint, and the style ratchet. [`.crow/e2e.yaml`](.crow/e2e.yaml)
+runs the end-to-end stream test. The performance suite remains a separate
+local task.
 
 See the [shared release guide](https://github.com/rsanheim/.github#readme) for
 setup and operation, and the [Deckard quick reference](docs/releasing.md) for

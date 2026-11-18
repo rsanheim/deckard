@@ -11,5 +11,8 @@ Run it from the repository root:
 bundle exec rake e2e
 ```
 
+CI runs the same test with `bin/stream_test --no-compose`: both apps run in one
+shell against two PostgreSQL services.
+
 The harness never runs the gem's RSpec suite, and the gem suite never depends
 on these containers.

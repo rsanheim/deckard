@@ -33,8 +33,9 @@ bundle exec rake db:reset     # drop, create, migrate, and seed the test databas
 See [AGENTS.md](AGENTS.md#ci-and-validation) for CI coverage and validation
 commands. The Crow workflow in `.crow/ruby.yaml` runs `bundle exec rake`
 (specs, Standard lint, and the style ratchet) on PRs, default-branch pushes,
-and manual triggers. It uses Ruby and an isolated PostgreSQL service. E2E and
-performance tests are separate tasks; a green CI result does not cover them.
+and manual triggers. It uses Ruby and an isolated PostgreSQL service.
+`.crow/e2e.yaml` runs the end-to-end stream test on the same events.
+Performance tests are a separate task; a green CI result does not cover them.
 
 ## Test tiers
 
