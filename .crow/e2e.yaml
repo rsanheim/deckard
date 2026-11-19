@@ -19,11 +19,11 @@ services:
 
 steps:
   - name: e2e
-    image: docker.io/library/ruby:4.0.9
+    image: docker.io/library/ruby:4.0.10
     environment:
       BUNDLE_JOBS: '4'
       BUNDLE_RETRY: '3'
-      BUNDLE_PATH: /cache/deckard/ruby-4.0.9/bundle
+      BUNDLE_PATH: /cache/deckard/ruby-4.0.10/bundle
       XDG_CACHE_HOME: /cache/deckard/xdg
     commands:
       - cd harness
