@@ -12,14 +12,7 @@
 
 Deckard copies selected ActiveRecord objects and their associated records from one Rails environment into another.
 
-Its primary use case is copying production data into a local development database for debugging, support investigations, and realistic development work:
-
-```bash
-remote_command="deckard -r /app/config/environment -d 'User.find(1234)'"
-
-ssh example.org "$remote_command" \
-  | deckard -r ./config/environment -l
-```
+Its primary use case is copying production data into a local development database for debugging, support investigations, and realistic development work. See [direct SSH streaming](#67-direct-ssh-streaming).
 
 Deckard is a direct resurrection of the original `replicate` gem’s operating model:
 
@@ -176,14 +169,15 @@ The source and destination should run compatible Deckard versions.
 
 ## 6. Command-line interface
 
-Deckard intentionally retains the original `-r`, `-d`, and `-l` interface.
+Deckard retains the original short options alongside the long forms in these
+examples.
 
 ### 6.1 Dumping an expression
 
 Evaluate a Ruby expression and dump the resulting object or objects to standard output:
 
 ```bash
-deckard -r ./config/environment -d "User.find(1)" > user.dump
+deckard --dump 'User.find(1)' > user.dump
 ```
 
 Diagnostic output goes to standard error:
@@ -211,16 +205,21 @@ There is no `--root` option: every object passed to `dump` is a root.
 
 ### 6.2 Requiring the application environment
 
-The `-r` option requires a Ruby file before evaluating or loading anything:
+For `--dump`, `--load`, and `--plan`, Deckard loads `config/environment.rb`
+from the working directory if it is a regular file and `-r FILE` is omitted.
+
+Use `-r FILE` to boot from another directory or to load a custom boot file:
 
 ```bash
-deckard -r ./config/environment -d "User.find(1)"
+deckard -r /app/config/environment --dump 'User.find(1)'
 ```
 
-This normally boots Rails and loads the application’s model classes. Before a
-dump, Deckard eager loads the application (through Zeitwerk, when present) so
-every model’s `replicate` block has run, and validates every plan (section
-7.5) before any record is written. A load consults no plan: each record
+With no `-r` option and no regular file at that path, Deckard proceeds without
+an app boot file. A dump script can load its own dependencies (section 6.3).
+
+Before a dump, Deckard eager loads the application (through Zeitwerk, when
+present) so every model’s `replicate` block has run, and validates every plan
+(section 7.5) before any record is written. A load consults no plan: each record
 arrives with its match key (section 9.2), so the destination never consults or
 checks its `replicate` blocks.
 
@@ -240,13 +239,13 @@ For more involved selection, use a normal Ruby file:
 end
 ```
 
-Run it with the same `-d` option:
+Run it with `--dump`:
 
 ```bash
-deckard -r ./config/environment -d config/deckard/dump-stuff.rb > repos.dump
+deckard --dump config/deckard/dump-stuff.rb > repos.dump
 ```
 
-When the argument to `-d` resolves to a file, Deckard evaluates that file in a small context exposing:
+When the argument to `--dump` resolves to a file, Deckard evaluates that file in a small context exposing:
 
 ```ruby
 dump(object)
@@ -256,10 +255,10 @@ A script may call `dump` as many times as necessary. Command-line arguments
 after the options are left in `ARGV` for the script:
 
 ```bash
-deckard -r ./config/environment -d config/deckard/dump-repo.rb tilt
+deckard --dump config/deckard/dump-repo.rb tilt
 ```
 
-`-d -` reads the script from standard input instead of a file.
+`--dump -` reads the script from standard input.
 
 A dump script is ordinary trusted Ruby. Deckard does not invent a separate configuration or query language for this use case.
 
@@ -268,7 +267,7 @@ A dump script is ordinary trusted Ruby. Deckard does not invent a separate confi
 Load a Deckard stream from standard input:
 
 ```bash
-deckard -r ./config/environment -l < repos.dump
+deckard --load < repos.dump
 ```
 
 Diagnostic output goes to standard error:
@@ -293,8 +292,8 @@ overrides it for the rare deliberate case.
 `--plan MODEL` prints the plan for dumps rooted at that model and exits:
 
 ```bash
-deckard -r ./config/environment --plan Order
-deckard -r ./config/environment --plan Order --format json
+deckard --plan Order
+deckard --plan Order --format json
 ```
 
 The plan is built as data (`ModelConfig#to_h`: the root entry first, then
@@ -315,18 +314,16 @@ Before requiring the application in dump mode, Deckard duplicates the
 original standard output for its own use and reopens file descriptor 1 onto
 standard error. Everything the process or its children subsequently write to
 stdout lands on stderr, and only the stream reaches the pipe or file. The
-operator does nothing to opt in; `> user.dump` and `| deckard -l` work as
+operator does nothing to opt in; `> user.dump` and `| deckard --load` work as
 written regardless of what the application prints.
 
 ### 6.7 Direct SSH streaming
 
-The primary remote workflow remains a normal Unix pipeline:
+Run the remote dump and local load from their respective application roots:
 
 ```bash
-remote_command="deckard -r /app/config/environment -d 'User.find(1234)'"
-
-ssh example.org "$remote_command" \
-  | deckard -r ./config/environment -l
+ssh example.org 'cd /app && deckard --dump "User.find(1234)"' \
+  | deckard --load
 ```
 
 SSH is only the transport. Deckard does not manage SSH connections or know anything about the remote host.
@@ -336,14 +333,15 @@ SSH is only the transport. Deckard does not manage SSH connections or know anyth
 The required v1.0 CLI is deliberately small:
 
 ```text
-deckard -r FILE -d EXPRESSION_OR_FILE_OR_- [ARGS...]
-deckard -r FILE -l [--force]
-deckard -r FILE --plan MODEL [--format text|json]
+deckard --dump EXPRESSION_OR_FILE_OR_- [ARGS...]
+deckard --load [--force]
+deckard --plan MODEL [--format text|json]
 deckard --version
 deckard --help
 ```
 
-No additional data-selection CLI is required.
+`-d` and `-l` are aliases for `--dump` and `--load`. Any of the three
+operations accepts `-r FILE` (`--require FILE`) as a boot override.
 
 ## 7. ActiveRecord model configuration
 
@@ -462,7 +460,7 @@ end
 Dumping a user now includes its email addresses:
 
 ```bash
-deckard -r ./config/environment -d "User.find(1)" > user.dump
+deckard --dump 'User.find(1)' > user.dump
 ```
 
 `associations` is additive and may receive multiple names:
@@ -1144,9 +1142,9 @@ Responsibilities:
 
 ### `Deckard::CLI`
 
-- Parse `-r`, `-d`, and `-l`.
+- Parse the [command-line options](#68-cli-scope).
 - Reserve standard output for the stream before requiring the application.
-- Require the application environment.
+- Apply the [application boot rules](#62-requiring-the-application-environment).
 - Before a dump, eager load the application and validate every plan.
 - Print a root's plan on request, as text or JSON.
 - Evaluate dump expressions and scripts.
@@ -1235,11 +1233,7 @@ Deckard v1.0 is ready when the following work against ActiveRecord 8 and Postgre
 
 ### 18.1 Original-style expression dump
 
-```bash
-deckard -r ./config/environment -d "User.find(1)" > user.dump
-```
-
-produces a loadable stream.
+The [expression dump](#61-dumping-an-expression) produces a loadable stream.
 
 ### 18.2 Original-style dump script
 
@@ -1253,13 +1247,8 @@ can dump multiple records, relations, and collections.
 
 ### 18.3 Direct SSH pipeline
 
-```bash
-ssh example.org \
-  "deckard -r /app/config/environment -d 'User.find(1234)'" \
-| deckard -r ./config/environment -l
-```
-
-loads records without an intermediate file.
+The [SSH pipeline](#67-direct-ssh-streaming) loads records without an
+intermediate file.
 
 ### 18.4 Default association behavior
 

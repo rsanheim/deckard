@@ -5,18 +5,27 @@ require "open3"
 require "pty"
 require "stringio"
 require "tempfile"
+require "tmpdir"
 
 # Outside-in CLI specs: every example runs exe/deckard as a real subprocess
 # against the plain-Ruby models in spec/fixtures/cli_models.rb.
 RSpec.describe "deckard CLI" do
-  def run_deckard(*args, stdin: "", env: {})
+  def run_deckard(*args, stdin: "", env: {}, chdir: File.expand_path("../..", __dir__))
     root = File.expand_path("../..", __dir__)
-    Open3.capture3(env, RbConfig.ruby, "-Ilib", "exe/deckard", *args,
-      stdin_data: stdin.dup.force_encoding(Encoding::BINARY), chdir: root)
+    Open3.capture3(env, RbConfig.ruby, "-I#{root}/lib", "#{root}/exe/deckard", *args,
+      stdin_data: stdin.dup.force_encoding(Encoding::BINARY), chdir: chdir)
   end
 
   def fixture
     File.expand_path("../fixtures/cli_models.rb", __dir__)
+  end
+
+  def with_app_root
+    Dir.mktmpdir do |app|
+      Dir.mkdir(File.join(app, "config"))
+      File.write(File.join(app, "config/environment.rb"), "puts 'environment booted' if ENV['DECKARD_BOOT_LOG'] == '1'\nrequire #{fixture.inspect}\n")
+      yield app
+    end
   end
 
   it "dumps an expression: only the stream on stdout, status on stderr" do
@@ -31,6 +40,28 @@ RSpec.describe "deckard CLI" do
     expect(io.eof?).to be(true)
     expect(err).to include("dumped 2 total objects")
     expect(err).to include("CliWidget")
+  end
+
+  it "lets -r override config/environment.rb" do
+    with_app_root do |app|
+      _, err, status = run_deckard("-r", fixture, "-d", "WIDGETS", chdir: app, env: {"DECKARD_BOOT_LOG" => "1"})
+
+      expect(status.exitstatus).to eq(0)
+      expect(err).not_to include("environment booted")
+      expect(err).to include("dumped 2 total objects")
+    end
+  end
+
+  it "requires nothing without -r or config/environment.rb, leaving a dump script to load its own" do
+    Tempfile.create(["dump_script", ".rb"]) do |script|
+      script.write("require #{fixture.inspect}\ndump WIDGETS\n")
+      script.flush
+
+      _, err, status = run_deckard("-d", script.path)
+
+      expect(status.exitstatus).to eq(0)
+      expect(err).to include("dumped 2 total objects")
+    end
   end
 
   it "eager loads the application and validates every plan before dumping" do
@@ -59,7 +90,9 @@ RSpec.describe "deckard CLI" do
         omit associations tax
     TEXT
 
-    out, _, status = run_deckard("-r", fixture, "--plan", "WidgetOrder", "--format", "json")
+    out, _, status = with_app_root do |app|
+      run_deckard("--plan", "WidgetOrder", "--format", "json", chdir: app)
+    end
     expect(status.exitstatus).to eq(0)
     expect(JSON.parse(out)).to eq(
       "root" => "WidgetOrder",
@@ -104,17 +137,22 @@ RSpec.describe "deckard CLI" do
     end
   end
 
-  it "loads a dumped stream from stdin" do
-    dumped, _, _ = run_deckard("-r", fixture, "-d", "WIDGETS")
+  it "boots automatically for --dump and --load and keeps dump boot logs off stdout" do
+    with_app_root do |app|
+      dumped, err, status = run_deckard("--dump", "WIDGETS", chdir: app, env: {"DECKARD_BOOT_LOG" => "1"})
 
-    Tempfile.create("deckard-cli-out") do |out_file|
-      _, err, status = run_deckard("-r", fixture, "-l",
-        stdin: dumped, env: {"DECKARD_CLI_OUT" => out_file.path})
+      expect(status).to be_success
+      expect(err).to include("environment booted", "dumped 2 total objects")
 
-      expect(status.exitstatus).to eq(0)
-      loaded = out_file.read.lines.map { |line| JSON.parse(line) }
-      expect(loaded.map { |record| record["attributes"]["name"] }).to eq(%w[flux capacitor])
-      expect(err).to include("loaded 2 total objects")
+      Tempfile.create("deckard-cli-out") do |out_file|
+        _, err, status = run_deckard("--load", chdir: app,
+          stdin: dumped, env: {"DECKARD_CLI_OUT" => out_file.path})
+
+        expect(status).to be_success
+        expect(err).to include("loaded 2 total objects")
+        loaded = out_file.read.lines.map { |line| JSON.parse(line) }
+        expect(loaded.map { |record| record["attributes"]["name"] }).to eq(%w[flux capacitor])
+      end
     end
   end
 

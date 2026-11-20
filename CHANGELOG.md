@@ -7,6 +7,13 @@ change the stream format and the Ruby API.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-19
+
+### Changed
+
+- Dump, load, and plan commands now boot automatically from a Rails app root
+  when `config/environment.rb` is present. See [application boot](docs/spec.md#62-requiring-the-application-environment).
+
 ## [0.4.1] - 2026-11-17
 
 ### Changed

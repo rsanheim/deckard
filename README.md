@@ -12,7 +12,7 @@ for ActiveRecord 8 and PostgreSQL.
 
 ## Quick start
 
-Add the gem to both applications:
+Add the gem to both applications and run `bundle install` in each:
 
 ```ruby
 gem "deckard"
@@ -41,12 +41,13 @@ class Order < ActiveRecord::Base
 end
 ```
 
-From your development machine, dump on the remote side and load locally in
-one pipe. SSH is the transport; nothing lands on disk:
+From your local Rails app root, dump on the remote side and load locally in
+one pipe. Deckard loads `config/environment.rb` from each app's working
+directory when present.
 
 ```bash
-ssh prod.example.org "deckard -r /app/config/environment -d 'Order.find(1234)'" \
-  | deckard -r ./config/environment -l
+ssh prod.example.org 'cd /app && bundle exec deckard --dump "Order.find(1234)"' \
+  | bundle exec deckard --load
 ```
 
 Standard error on each end reports what moved:
@@ -66,9 +67,12 @@ rather than duplicated. Everything else is a new row with a new id.
 To keep a dump around, write it to a file and load it later:
 
 ```bash
-deckard -r ./config/environment -d "Order.find(1234)" > order.dump
-deckard -r ./config/environment -l < order.dump
+bundle exec deckard --dump 'Order.find(1234)' > order.dump
+bundle exec deckard --load < order.dump
 ```
+
+Use `-r FILE` when you need to override automatic boot. See
+[application boot](docs/spec.md#62-requiring-the-application-environment).
 
 ## What a dump carries
 
@@ -131,8 +135,8 @@ before any record is dumped. Loading consults no plan at all.
 To see a plan before pointing it at production, print it:
 
 ```bash
-deckard -r ./config/environment --plan Order
-deckard -r ./config/environment --plan Order --format json
+bundle exec deckard --plan Order
+bundle exec deckard --plan Order --format json
 ```
 
 ```text
@@ -149,12 +153,9 @@ Customer
 
 ## Dumping
 
-`-d` evaluates a Ruby expression and streams the result to standard output.
-Diagnostics go to standard error; standard output carries only the stream.
-Application boot code that prints to stdout (a logger pointed at `STDOUT`, a
-stray `puts` in an initializer) cannot corrupt it: before requiring the
-application, deckard keeps the original stdout for itself and points file
-descriptor 1 at stderr.
+`--dump` evaluates a Ruby expression and streams the result to standard
+output. Deckard sends diagnostics and app boot output to standard error.
+See [application output during a dump](docs/spec.md#66-application-output-during-a-dump).
 
 For more involved selection, pass a Ruby file instead of an expression. The
 script runs in a context exposing `dump(object)`:
@@ -167,19 +168,19 @@ dump repo.issues
 ```
 
 ```bash
-deckard -r ./config/environment -d config/deckard/dump-repo.rb tilt > repos.dump
+bundle exec deckard --dump config/deckard/dump-repo.rb tilt > repos.dump
 ```
 
-Extra command-line arguments reach the script through `ARGV`, and `-d -`
-reads the script from standard input. An expression given to `-d` runs in
+Extra command-line arguments reach the script through `ARGV`, and `--dump -`
+reads the script from standard input. An expression given to `--dump` runs in
 the same context, so it may call `dump` directly. While stderr is a
 terminal, a live object counter shows progress on both ends of the pipe.
 
 ## Loading
 
-`-l` reads a stream from standard input and loads it inside one transaction,
-bypassing validations and callbacks: it copies data, it does not run your
-application. If the source dies mid-stream, nothing is committed.
+`--load` reads a stream from standard input and loads it in one transaction.
+The load bypasses model validations and callbacks. If the source dies
+mid-stream, nothing is committed.
 
 Deckard syncs a primary key that is not auto-populated like any other
 field. Give that model a match key if the same dump will be loaded twice.
@@ -209,13 +210,8 @@ between two docker compose containers. `bundle exec rake test-all` runs both
 host-side checks and the full-stack test. See `docs/spec.md` for the v1.0
 specification and `docs/traversal.md` for how a dump walks the graph.
 
-Crow CI runs `bundle exec rake` on pull requests, default-branch pushes, and
-manual runs using Ruby and an isolated PostgreSQL service. The workflow in
-[`.crow/ruby.yaml`](.crow/ruby.yaml) defines the runtime versions and covers
-specs, Standard lint, and the style ratchet. [`.crow/e2e.yaml`](.crow/e2e.yaml)
-runs the end-to-end stream test. The performance suite remains a separate
-local task.
+See the [CI and validation guide](CLAUDE.md#ci-and-validation) for workflow
+coverage and commands.
 
-See the [shared release guide](https://github.com/rsanheim/.github#readme) for
-setup and operation, and the [Deckard quick reference](docs/releasing.md) for
-the files to update in a release PR.
+See [Releasing Deckard](docs/releasing.md) for release setup and the files to
+update in a release PR.
