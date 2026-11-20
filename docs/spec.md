@@ -209,7 +209,8 @@ There is no `--root` option: every object passed to `dump` is a root.
 
 ### 6.2 Requiring the application environment
 
-Before evaluating or loading anything, Deckard requires `config/environment.rb` from the working directory when that file exists, so a command run from a Rails application's root needs no option:
+For `--dump`, `--load`, and `--plan`, Deckard loads `config/environment.rb`
+from the working directory if the file exists and `-r FILE` is omitted.
 
 ```bash
 deckard -d "User.find(1)"
@@ -221,15 +222,14 @@ Use `-r FILE` to boot from another directory or to load a custom boot file:
 deckard -r /app/config/environment -d "User.find(1)"
 ```
 
-With neither, Deckard evaluates the dump without requiring an environment. A
-dump script can load its own dependencies (section 6.3). If a dump expression
-encounters an undefined name, Deckard points the operator to the environment
-file or `-r FILE`.
+If `-r` is omitted and there is no `config/environment.rb`, Deckard proceeds
+without a boot file. A dump script can load its own dependencies (section 6.3).
+If a dump expression then encounters an undefined name, Deckard points the
+operator to `config/environment.rb` or `-r FILE`.
 
-This normally boots Rails and loads the application’s model classes. Before a
-dump, Deckard eager loads the application (through Zeitwerk, when present) so
-every model’s `replicate` block has run, and validates every plan (section
-7.5) before any record is written. A load consults no plan: each record
+Before a dump, Deckard eager loads the application (through Zeitwerk, when
+present) so every model’s `replicate` block has run, and validates every plan
+(section 7.5) before any record is written. A load consults no plan: each record
 arrives with its match key (section 9.2), so the destination never consults or
 checks its `replicate` blocks.
 
