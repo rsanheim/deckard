@@ -13,12 +13,12 @@ module Deckard
     # Evaluation context for dump scripts and -d expressions: exposes only
     # dump(object). Scripts see any extra command-line arguments in ARGV.
     class DumpScript
-      def initialize(&dumper)
+      def initialize(dumper)
         @dumper = dumper
       end
 
       def dump(object)
-        @dumper.call.dump(object)
+        @dumper.dump(object)
       end
     end
 
@@ -36,7 +36,7 @@ module Deckard
       require File.expand_path(environment) if environment
 
       if options[:dump]
-        dump(options[:dump], environment_loaded: !environment.nil?)
+        dump(options[:dump])
       elsif options[:plan]
         print_plan(options[:plan], options[:format])
       else
@@ -100,31 +100,21 @@ module Deckard
       Zeitwerk::Loader.eager_load_all if defined?(Zeitwerk::Loader)
     end
 
-    def dump(target, environment_loaded:)
+    def dump(target)
       eager_load
       ModelConfig.validate!
       @stdout.binmode
-      # Start the stream on demand so an expression can fail before writing to stdout.
-      dumper = nil
-      start_dump = -> { dumper ||= Dumper.new(@stdout) { |counts| Status.progress("dumping", counts, @stderr) } }
-      script = DumpScript.new(&start_dump)
+      dumper = Dumper.new(@stdout) { |counts| Status.progress("dumping", counts, @stderr) }
+      script = DumpScript.new(dumper)
 
       if target == "-"
         script.instance_eval(@stdin.read, "<stdin>")
       elsif File.exist?(target)
         script.instance_eval(File.read(target), target)
       else
-        result = begin
-          script.instance_eval(target, "deckard -d")
-        rescue NameError => error
-          raise if environment_loaded || !error.instance_of?(NameError)
-
-          raise DumpError, "#{Deckard.error_detail(error)}. Run from a Rails app with config/environment.rb or pass -r FILE."
-        end
-        script.dump(result)
+        dumper.dump(script.instance_eval(target, "deckard -d"))
       end
 
-      dumper = start_dump.call
       dumper.complete
       @stdout.flush
       Status.report("dumped", dumper.counts, @stderr)

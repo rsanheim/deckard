@@ -224,8 +224,6 @@ deckard -r /app/config/environment -d "User.find(1)"
 
 If `-r` is omitted and there is no `config/environment.rb`, Deckard proceeds
 without a boot file. A dump script can load its own dependencies (section 6.3).
-If a dump expression then encounters an undefined name, Deckard points the
-operator to `config/environment.rb` or `-r FILE`.
 
 Before a dump, Deckard eager loads the application (through Zeitwerk, when
 present) so every model’s `replicate` block has run, and validates every plan
