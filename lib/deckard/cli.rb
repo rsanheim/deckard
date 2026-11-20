@@ -75,12 +75,13 @@ module Deckard
             load:  deckard --load < user.dump
             plan:  deckard --plan User
 
-          Run from a Rails application's root, deckard loads config/environment.rb.
+          Dump, load, and plan commands load config/environment.rb from the
+          current directory when present.
 
           Options:
         BANNER
-        opt :require, "Ruby file to require instead of config/environment.rb", type: :string
-        opt :dump, "Dump the result of a Ruby expression, or run a dump script (a file, or - for stdin)", type: :string
+        opt :require, "Ruby file to load in place of config/environment.rb", type: :string
+        opt :dump, "Dump the result of a Ruby expression or run a dump script. Use - to read the script from standard input.", type: :string
         opt :load, "Load a deckard stream from standard input"
         opt :plan, "Print the plan for dumps rooted at MODEL", type: :string
         opt :format, "Plan output: #{PlanReport::FORMATS.join(" or ")}", default: "text"

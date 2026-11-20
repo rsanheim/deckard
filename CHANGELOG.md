@@ -9,8 +9,8 @@ change the stream format and the Ruby API.
 
 ### Changed
 
-- Deckard loads `config/environment.rb` from the working directory by default.
-  Use `-r FILE` to specify an application boot file explicitly.
+- Dump, load, and plan commands now boot automatically from a Rails app root
+  when `config/environment.rb` is present. See [application boot](docs/spec.md#62-requiring-the-application-environment).
 
 ## [0.4.1] - 2026-11-17
 
