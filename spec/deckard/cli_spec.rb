@@ -20,6 +20,14 @@ RSpec.describe "deckard CLI" do
     File.expand_path("../fixtures/cli_models.rb", __dir__)
   end
 
+  def with_app_root
+    Dir.mktmpdir do |app|
+      Dir.mkdir(File.join(app, "config"))
+      File.write(File.join(app, "config/environment.rb"), "puts 'environment booted' if ENV['DECKARD_BOOT_LOG'] == '1'\nrequire #{fixture.inspect}\n")
+      yield app
+    end
+  end
+
   it "dumps an expression: only the stream on stdout, status on stderr" do
     out, err, status = run_deckard("-r", fixture, "-d", "WIDGETS")
 
@@ -34,20 +42,9 @@ RSpec.describe "deckard CLI" do
     expect(err).to include("CliWidget")
   end
 
-  it "boots config/environment.rb from the working directory unless -r names another file" do
-    Dir.mktmpdir do |app|
-      Dir.mkdir(File.join(app, "config"))
-      File.write(File.join(app, "config/environment.rb"), "puts 'environment booted'\nrequire #{fixture.inspect}\n")
-
-      out, err, status = run_deckard("-d", "WIDGETS", chdir: app)
-
-      expect(status.exitstatus).to eq(0)
-      expect(err).to include("environment booted")
-      expect(err).to include("dumped 2 total objects")
-      io = StringIO.new(out)
-      expect(Marshal.load(io)).to eq(Deckard::STREAM_HEADER)
-
-      _, err, status = run_deckard("-r", fixture, "-d", "WIDGETS", chdir: app)
+  it "lets -r override config/environment.rb" do
+    with_app_root do |app|
+      _, err, status = run_deckard("-r", fixture, "-d", "WIDGETS", chdir: app, env: {"DECKARD_BOOT_LOG" => "1"})
 
       expect(status.exitstatus).to eq(0)
       expect(err).not_to include("environment booted")
@@ -106,7 +103,9 @@ RSpec.describe "deckard CLI" do
         omit associations tax
     TEXT
 
-    out, _, status = run_deckard("-r", fixture, "--plan", "WidgetOrder", "--format", "json")
+    out, _, status = with_app_root do |app|
+      run_deckard("--plan", "WidgetOrder", "--format", "json", chdir: app)
+    end
     expect(status.exitstatus).to eq(0)
     expect(JSON.parse(out)).to eq(
       "root" => "WidgetOrder",
@@ -151,17 +150,22 @@ RSpec.describe "deckard CLI" do
     end
   end
 
-  it "loads a dumped stream from stdin" do
-    dumped, _, _ = run_deckard("-r", fixture, "-d", "WIDGETS")
+  it "boots automatically for --dump and --load and keeps dump boot logs off stdout" do
+    with_app_root do |app|
+      dumped, err, status = run_deckard("--dump", "WIDGETS", chdir: app, env: {"DECKARD_BOOT_LOG" => "1"})
 
-    Tempfile.create("deckard-cli-out") do |out_file|
-      _, err, status = run_deckard("-r", fixture, "-l",
-        stdin: dumped, env: {"DECKARD_CLI_OUT" => out_file.path})
+      expect(status).to be_success
+      expect(err).to include("environment booted", "dumped 2 total objects")
 
-      expect(status.exitstatus).to eq(0)
-      loaded = out_file.read.lines.map { |line| JSON.parse(line) }
-      expect(loaded.map { |record| record["attributes"]["name"] }).to eq(%w[flux capacitor])
-      expect(err).to include("loaded 2 total objects")
+      Tempfile.create("deckard-cli-out") do |out_file|
+        _, err, status = run_deckard("--load", chdir: app,
+          stdin: dumped, env: {"DECKARD_CLI_OUT" => out_file.path})
+
+        expect(status).to be_success
+        expect(err).to include("loaded 2 total objects")
+        loaded = out_file.read.lines.map { |line| JSON.parse(line) }
+        expect(loaded.map { |record| record["attributes"]["name"] }).to eq(%w[flux capacitor])
+      end
     end
   end
 

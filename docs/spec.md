@@ -15,10 +15,8 @@ Deckard copies selected ActiveRecord objects and their associated records from o
 Its primary use case is copying production data into a local development database for debugging, support investigations, and realistic development work:
 
 ```bash
-remote_command="deckard -r /app/config/environment -d 'User.find(1234)'"
-
-ssh example.org "$remote_command" \
-  | deckard -l
+ssh example.org 'cd /app && deckard --dump "User.find(1234)"' \
+  | deckard --load
 ```
 
 Deckard is a direct resurrection of the original `replicate` gem’s operating model:
@@ -331,13 +329,11 @@ written regardless of what the application prints.
 
 ### 6.7 Direct SSH streaming
 
-The primary remote workflow remains a normal Unix pipeline:
+Run the remote dump and local load from their respective application roots:
 
 ```bash
-remote_command="deckard -r /app/config/environment -d 'User.find(1234)'"
-
-ssh example.org "$remote_command" \
-  | deckard -l
+ssh example.org 'cd /app && deckard --dump "User.find(1234)"' \
+  | deckard --load
 ```
 
 SSH is only the transport. Deckard does not manage SSH connections or know anything about the remote host.
@@ -347,14 +343,15 @@ SSH is only the transport. Deckard does not manage SSH connections or know anyth
 The required v1.0 CLI is deliberately small:
 
 ```text
-deckard [-r FILE] -d EXPRESSION_OR_FILE_OR_- [ARGS...]
-deckard [-r FILE] -l [--force]
-deckard [-r FILE] --plan MODEL [--format text|json]
+deckard --dump EXPRESSION_OR_FILE_OR_- [ARGS...]
+deckard --load [--force]
+deckard --plan MODEL [--format text|json]
 deckard --version
 deckard --help
 ```
 
-No additional data-selection CLI is required.
+`-d` and `-l` are aliases for `--dump` and `--load`. Any of the three
+operations accepts `-r FILE` (`--require FILE`) as a boot override.
 
 ## 7. ActiveRecord model configuration
 
@@ -1265,9 +1262,8 @@ can dump multiple records, relations, and collections.
 ### 18.3 Direct SSH pipeline
 
 ```bash
-ssh example.org \
-  "deckard -r /app/config/environment -d 'User.find(1234)'" \
-| deckard -l
+ssh example.org 'cd /app && deckard --dump "User.find(1234)"' \
+  | deckard --load
 ```
 
 loads records without an intermediate file.

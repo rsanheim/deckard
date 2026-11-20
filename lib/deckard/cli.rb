@@ -71,9 +71,8 @@ module Deckard
         banner <<~BANNER
           deckard: stream ActiveRecord objects between Rails environments
 
-            dump:  deckard -d "User.find(1)" > user.dump
-            load:  deckard -l < user.dump
-            pipe:  ssh example.org "deckard -r /app/config/environment -d 'User.find(1)'" | deckard -l
+            dump:  deckard --dump "User.find(1)" > user.dump
+            load:  deckard --load < user.dump
             plan:  deckard --plan User
 
           Run from a Rails application's root, deckard loads config/environment.rb.

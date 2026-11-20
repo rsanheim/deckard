@@ -41,14 +41,13 @@ class Order < ActiveRecord::Base
 end
 ```
 
-From your development machine, dump on the remote side and load locally in
-one pipe. SSH is the transport; nothing lands on disk. Run from a Rails
-application's root, `deckard` loads `config/environment.rb` itself; `-r FILE`
-names the file to require when using another directory or a custom boot file:
+From your local Rails app root, dump on the remote side and load locally in
+one pipe. Both commands load `config/environment.rb` from their working
+directory.
 
 ```bash
-ssh prod.example.org "deckard -r /app/config/environment -d 'Order.find(1234)'" \
-  | deckard -l
+ssh prod.example.org 'cd /app && deckard --dump "Order.find(1234)"' \
+  | deckard --load
 ```
 
 Standard error on each end reports what moved:
@@ -68,9 +67,13 @@ rather than duplicated. Everything else is a new row with a new id.
 To keep a dump around, write it to a file and load it later:
 
 ```bash
-deckard -d "Order.find(1234)" > order.dump
-deckard -l < order.dump
+deckard --dump 'Order.find(1234)' > order.dump
+deckard --load < order.dump
 ```
+
+`-d` and `-l` are shorthand for `--dump` and `--load`. Use `-r FILE`
+(`--require FILE`) to override automatic boot from a different working
+directory or with a custom boot file.
 
 ## What a dump carries
 
